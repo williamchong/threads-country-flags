@@ -341,16 +341,6 @@ const pendingViewTimers = new WeakMap();
 const observedLinks = new WeakSet();
 
 /**
- * Listen for GraphQL data from the interceptor script (runs in MAIN world)
- * The interceptor.js file runs in the main page context and sends us data via CustomEvent
- */
-window.addEventListener('threadsGraphQLData', (event) => {
-  console.log('[Threads Country Flags] 📥 Received GraphQL data event in content script');
-  console.log('[Threads Country Flags] Event detail:', event.detail ? 'Present' : 'Missing');
-  extractUserDataFromGraphQL(event.detail);
-});
-
-/**
  * Listen for bulk-route-definitions data for username → user_id mapping
  */
 window.addEventListener('threadsBulkRouteData', (event) => {
@@ -439,45 +429,6 @@ function extractUserDataFromBulkRoute(data) {
     // Note: No need to manually trigger reprocessing - intersection observer handles it
   } catch (error) {
     console.error('[Threads Country Flags] ❌ Error extracting bulk-route data:', error);
-  }
-}
-
-/**
- * Extract user data from GraphQL response and build username→userID mapping
- * @param {Object} data - GraphQL response data
- */
-function extractUserDataFromGraphQL(data) {
-  console.log('[Threads Country Flags] 🔍 Extracting user data from GraphQL...');
-
-  try {
-    // Navigate through the feed data structure
-    const edges = data?.data?.feedData?.edges || [];
-    console.log(`[Threads Country Flags] Found ${edges.length} edges in feedData`);
-
-    let usersFound = 0;
-
-    for (const edge of edges) {
-      const threadItems = edge?.text_post_app_thread?.thread_items || [];
-
-      for (const item of threadItems) {
-        const user = item?.post?.user;
-
-        if (user && user.username && (user.pk || user.id)) {
-          const userId = user.pk || user.id;
-          const username = user.username;
-
-          // Build the mapping
-          usernameToIdMap.set(username, userId);
-          usersFound++;
-
-          console.log(`[Threads Country Flags] ✅ Mapped: @${username} → ${userId}`);
-        }
-      }
-    }
-
-    console.log(`[Threads Country Flags] 📊 Total users mapped: ${usersFound}, Total in map: ${usernameToIdMap.size}`);
-  } catch (error) {
-    console.error('[Threads Country Flags] ❌ Error extracting user data:', error);
   }
 }
 

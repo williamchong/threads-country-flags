@@ -70,7 +70,7 @@
         if (sessionParams.lsd) formData.append('lsd', sessionParams.lsd);
         formData.append('__user', sessionParams.__user || '0');
         formData.append('__a', sessionParams.__a || '1');
-        formData.append('__req', sessionParams.__req || 'ce');
+        formData.append('__req', Math.random().toString(16).substring(2, 4));
         if (sessionParams.__hs) formData.append('__hs', sessionParams.__hs);
         if (sessionParams.dpr) formData.append('dpr', sessionParams.dpr);
         if (sessionParams.__ccg) formData.append('__ccg', sessionParams.__ccg);
@@ -92,7 +92,7 @@
       } else {
         formData.append('__user', '0');
         formData.append('__a', '1');
-        formData.append('__req', 'ce');
+        formData.append('__req', Math.random().toString(16).substring(2, 4));
         formData.append('__crn', 'comet.threads.BarcelonaProfileThreadsColumnRoute');
         formData.append('__d', 'www');
       }

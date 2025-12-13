@@ -5,10 +5,6 @@
 
 (function () {
   console.log('[Threads Country Flags] Interceptor script starting...');
-
-  let graphqlCount = 0;
-  let totalFetchCount = 0;
-  let totalXHRCount = 0;
   let sessionParamsCaptured = false;
 
   /**
@@ -81,105 +77,6 @@
     }
   }
 
-  // ===== Fetch Interceptor =====
-  const originalFetch = window.fetch;
-
-  window.fetch = async function (...args) {
-    totalFetchCount++;
-    const url = args[0];
-
-    console.log(`[Threads Country Flags] Fetch #${totalFetchCount}: ${typeof url === 'string' ? url.substring(0, 100) : 'Request object'}`);
-
-    const response = await originalFetch.apply(this, args);
-
-    // Intercept /bulk-route-definitions for username → user_id mapping
-    if (typeof url === 'string' && url.includes('/bulk-route-definitions')) {
-      console.log(`[Threads Country Flags] 🎯 bulk-route-definitions request detected via Fetch!`);
-
-      // Clone the response so we can read it without consuming it
-      const clone = response.clone();
-
-      try {
-        // Get request body
-        const requestBody = args[1]?.body || '';
-
-        // Capture session parameters if not already captured
-        if (!sessionParamsCaptured && requestBody) {
-          const sessionParams = extractSessionParams(requestBody);
-          if (sessionParams && sessionParams.fb_dtsg) {
-            window.dispatchEvent(new CustomEvent('threadsSessionParams', {
-              detail: sessionParams
-            }));
-            sessionParamsCaptured = true;
-            console.log('[Threads Country Flags] 📋 Session parameters captured and sent');
-          }
-        }
-
-        // Get response text and remove "for (;;);" prefix if exists
-        let responseText = await clone.text();
-        if (responseText.startsWith('for (;;);')) {
-          responseText = responseText.substring(9);
-          console.log('[Threads Country Flags] Removed "for (;;);" prefix');
-        }
-
-        const responseData = JSON.parse(responseText);
-        console.log('[Threads Country Flags] ✅ bulk-route-definitions response parsed (Fetch)');
-
-        // Send combined request + response to content script
-        window.dispatchEvent(new CustomEvent('threadsBulkRouteData', {
-          detail: {
-            requestBody: requestBody,
-            response: responseData
-          }
-        }));
-        console.log('[Threads Country Flags] 📤 bulk-route-definitions data sent to content script (Fetch)');
-      } catch (error) {
-        console.error('[Threads Country Flags] ❌ Error parsing bulk-route-definitions (Fetch):', error);
-      }
-    }
-
-    // Only intercept GraphQL queries
-    if (typeof url === 'string' && url.includes('/graphql/query')) {
-      graphqlCount++;
-      console.log(`[Threads Country Flags] 🎯 GraphQL request detected via Fetch! (#${graphqlCount})`);
-
-      // Clone the response so we can read it without consuming it
-      const clone = response.clone();
-
-      try {
-        const data = await clone.json();
-        console.log('[Threads Country Flags] ✅ GraphQL data parsed successfully');
-        console.log('[Threads Country Flags] GraphQL data keys:', Object.keys(data));
-
-        // Check for user and country information
-        const dataStr = JSON.stringify(data);
-        const hasUserId = dataStr.includes('user_id') || dataStr.includes('pk"');
-        const hasCountry = dataStr.includes('country') || dataStr.includes('bio_links') || dataStr.includes('public_phone');
-
-        if (hasUserId && hasCountry) {
-          console.log('[Threads Country Flags] 🎯🌍 FOUND: GraphQL response with user_id AND country info!');
-          console.log('[Threads Country Flags] Full data:', data);
-        } else if (hasUserId) {
-          console.log('[Threads Country Flags] 👤 Found user_id but no country info');
-        } else if (hasCountry) {
-          console.log('[Threads Country Flags] 🌍 Found country info but no user_id');
-        }
-
-        // Send data to content script via custom event
-        window.dispatchEvent(new CustomEvent('threadsGraphQLData', {
-          detail: data
-        }));
-        console.log('[Threads Country Flags] 📤 GraphQL data sent to content script via CustomEvent');
-      } catch (error) {
-        console.error('[Threads Country Flags] ❌ Error parsing GraphQL data:', error);
-      }
-    }
-
-    return response;
-  };
-
-  console.log('[Threads Country Flags] ✅ Fetch interceptor installed');
-
   // ===== XMLHttpRequest Interceptor =====
   const originalOpen = XMLHttpRequest.prototype.open;
   const originalSend = XMLHttpRequest.prototype.send;
@@ -191,10 +88,7 @@
   };
 
   XMLHttpRequest.prototype.send = function (...args) {
-    totalXHRCount++;
     const url = this._url;
-
-    console.log(`[Threads Country Flags] XHR #${totalXHRCount}: ${typeof url === 'string' ? url.substring(0, 100) : 'Unknown URL'}`);
 
     // Intercept /bulk-route-definitions for username → user_id mapping
     if (typeof url === 'string' && url.includes('/bulk-route-definitions')) {
@@ -240,36 +134,6 @@
             console.log('[Threads Country Flags] 📤 bulk-route-definitions data sent to content script');
           } catch (error) {
             console.error('[Threads Country Flags] ❌ Error parsing bulk-route-definitions:', error);
-          }
-        }
-
-        if (originalOnReadyStateChange) {
-          return originalOnReadyStateChange.apply(this, arguments);
-        }
-      };
-    }
-
-    // Only intercept GraphQL queries
-    if (typeof url === 'string' && url.includes('/graphql/query')) {
-      graphqlCount++;
-      console.log(`[Threads Country Flags] 🎯 GraphQL request detected via XHR! (#${graphqlCount})`);
-
-      const originalOnReadyStateChange = this.onreadystatechange;
-
-      this.onreadystatechange = function () {
-        if (this.readyState === 4 && this.status === 200) {
-          try {
-            const data = JSON.parse(this.responseText);
-            console.log('[Threads Country Flags] ✅ GraphQL data parsed successfully (XHR)');
-            console.log('[Threads Country Flags] GraphQL data keys:', Object.keys(data));
-
-            // Send data to content script via custom event
-            window.dispatchEvent(new CustomEvent('threadsGraphQLData', {
-              detail: data
-            }));
-            console.log('[Threads Country Flags] 📤 GraphQL data sent to content script via CustomEvent (XHR)');
-          } catch (error) {
-            console.error('[Threads Country Flags] ❌ Error parsing GraphQL data (XHR):', error);
           }
         }
 

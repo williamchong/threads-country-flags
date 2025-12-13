@@ -34,12 +34,10 @@ async function getStorageStats() {
 // Update statistics
 async function updateStats() {
   try {
-    const response = await chrome.runtime.sendMessage({ type: 'GET_STATS' });
     const storageStats = await getStorageStats();
 
     document.getElementById('storageSize').textContent = storageStats.storageSize;
     document.getElementById('storageBytes').textContent = formatBytes(storageStats.storageBytes);
-    document.getElementById('pendingRequests').textContent = response.pendingRequests || 0;
   } catch (error) {
     console.error('Error fetching stats:', error);
   }
