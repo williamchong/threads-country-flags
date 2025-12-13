@@ -2,6 +2,8 @@
 
 A Chrome extension that displays country flags next to usernames on Threads.com by leveraging the official Threads API.
 
+![Threads Country Flags Demo](./assets/cover.png)
+
 ## Features
 
 - **Automatic Country Detection**: Fetches country information from user profiles via the Threads API
