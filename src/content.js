@@ -20,6 +20,9 @@ const usernameToIdMap = new Map();
 // Track user ID to country mapping
 const countryCache = new Map();
 
+// Storage key prefix for persistent cache
+const STORAGE_PREFIX = 'country_';
+
 // Store session parameters for API requests
 let sessionParams = null;
 
@@ -189,6 +192,36 @@ function extractUsernameFromLink(element) {
 }
 
 /**
+ * Get country from persistent storage
+ * @param {string} userId
+ * @returns {Promise<string|null>}
+ */
+async function getCountryFromStorage(userId) {
+  try {
+    const key = STORAGE_PREFIX + userId;
+    const result = await chrome.storage.local.get(key);
+    return result[key] || null;
+  } catch (error) {
+    console.error('[Threads Country Flags] Error reading from storage:', error);
+    return null;
+  }
+}
+
+/**
+ * Save country to persistent storage
+ * @param {string} userId
+ * @param {string} country
+ */
+async function saveCountryToStorage(userId, country) {
+  try {
+    const key = STORAGE_PREFIX + userId;
+    await chrome.storage.local.set({ [key]: country });
+  } catch (error) {
+    console.error('[Threads Country Flags] Error saving to storage:', error);
+  }
+}
+
+/**
  * Find profile link elements on the page
  * These are <a> tags with href to /@username
  * @returns {HTMLElement[]} Array of profile link elements
@@ -259,8 +292,17 @@ async function addCountryFlag(linkElement, username) {
 
   console.log(`[Threads Country Flags] 🔍 Processing @${username} (${userId})`);
 
-  // Check if we already have the country in cache
+  // Check memory cache first
   let country = countryCache.get(userId);
+
+  // If not in memory, check persistent storage
+  if (!country) {
+    country = await getCountryFromStorage(userId);
+    if (country) {
+      console.log(`[Threads Country Flags] 💾 Loaded from storage for ${userId}: ${country}`);
+      countryCache.set(userId, country);
+    }
+  }
 
   if (!country) {
     // Check if there's already a pending request for this user
@@ -294,6 +336,13 @@ async function addCountryFlag(linkElement, username) {
           // Convert country name to flag emoji
           const countryDisplay = countryName ? getCountryFlag(countryName) : '';
           countryCache.set(userId, countryDisplay);
+          
+          // Save to persistent storage if valid (not empty, not 'unknown', not error)
+          if (countryDisplay && countryName && countryName.toLowerCase() !== 'unknown') {
+            await saveCountryToStorage(userId, countryDisplay);
+            console.log(`[Threads Country Flags] 💾 Saved to storage: ${userId} -> ${countryDisplay}`);
+          }
+          
           console.log(`[Threads Country Flags] 📬 Received country: "${countryDisplay}" for ${userId}`);
           return countryDisplay;
         } catch (error) {
