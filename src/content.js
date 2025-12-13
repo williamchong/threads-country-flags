@@ -536,6 +536,12 @@ async function addCountryFlag(linkElement, username) {
     return;
   }
 
+  // Skip if link contains or is near an image/svg (profile picture) or inside h1
+  if (linkElement.querySelector('img, svg') || linkElement.closest('img') || linkElement.closest('svg') || linkElement.closest('h1')) {
+    console.log(`[Threads Country Flags] ⏭️ Skipping @${username} - near/contains image/svg or inside h1`);
+    return;
+  }
+
   // Get user ID from our mapping
   const userId = usernameToIdMap.get(username);
 
