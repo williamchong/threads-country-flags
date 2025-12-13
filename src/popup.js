@@ -4,14 +4,12 @@
 
 const STORAGE_PREFIX = 'country_';
 
-// Format bytes to KB/MB
 function formatBytes(bytes) {
   if (bytes < 1024) return bytes + ' B';
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
   return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
 }
 
-// Get storage statistics
 async function getStorageStats() {
   try {
     const allItems = await chrome.storage.local.get(null);
@@ -31,7 +29,6 @@ async function getStorageStats() {
   }
 }
 
-// Update statistics
 async function updateStats() {
   try {
     const storageStats = await getStorageStats();
@@ -43,7 +40,6 @@ async function updateStats() {
   }
 }
 
-// Clear storage only
 async function clearStorageOnly() {
   try {
     const allItems = await chrome.storage.local.get(null);

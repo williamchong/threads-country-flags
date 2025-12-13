@@ -3,9 +3,6 @@
  * Handles API calls, caching, and message passing
  */
 
-/**
- * Clear all caches
- */
 async function clearAllCaches() {
   try {
     await chrome.storage.local.clear();

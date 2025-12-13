@@ -270,11 +270,6 @@ function countryCodeToFlag(countryCode) {
   return String.fromCodePoint(...codePoints);
 }
 
-/**
- * Normalize country name to lowercase and remove extra whitespace
- * @param {string} name - Country name
- * @returns {string} Normalized country name
- */
 function normalizeCountryName(name) {
   if (!name) return '';
   return name.toLowerCase().trim().replace(/\s+/g, ' ');
@@ -300,18 +295,10 @@ function countryNameToFlag(countryName) {
   return code ? countryCodeToFlag(code) : '';
 }
 
-/**
- * Get country display (just return the country name)
- * @param {string} countryName - Country name
- * @returns {string} Country name
- */
 function getCountryDisplay(countryName) {
   return countryName || '';
 }
 
-/**
- * Get country flag emoji from country name
- */
 function getCountryFlag(countryName) {
   return getCountryDisplay(countryName);
 }

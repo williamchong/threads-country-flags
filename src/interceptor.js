@@ -41,7 +41,6 @@
     try {
       const params = new URLSearchParams(body);
 
-      // Extract versioningID from page if not already extracted
       const versioningID = extractVersioningID();
 
       return {
@@ -92,10 +91,8 @@
 
     // Intercept /bulk-route-definitions for username → user_id mapping
     if (typeof url === 'string' && url.includes('/bulk-route-definitions')) {
-      // Capture request body to extract usernames from route_urls
       const requestBody = args[0];
 
-      // Capture session parameters if not already captured
       if (!sessionParamsCaptured && requestBody) {
         const sessionParams = extractSessionParams(requestBody);
         if (sessionParams && sessionParams.fb_dtsg) {

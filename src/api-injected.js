@@ -7,17 +7,11 @@
   const API_ENDPOINT = 'https://www.threads.com/async/wbloks/fetch/';
   const APP_ID = 'com.bloks.www.text_post_app.about_this_profile_async_action';
 
-  /**
-   * Parse Threads API response (strips "for (;;);" prefix and parses JSON)
-   */
   function parseThreadsResponse(responseText) {
     const jsonText = responseText.replace(/^for\s*\(\s*;\s*;\s*\)\s*;/, '');
     return JSON.parse(jsonText);
   }
 
-  /**
-   * Extract country from API response
-   */
   function extractCountryFromResponse(response) {
     try {
       const data = response?.payload?.layout?.bloks_payload?.data;
@@ -44,12 +38,8 @@
     }
   }
 
-  /**
-   * Fetch user country from Threads API
-   */
   async function fetchUserCountry(userId, sessionParams) {
     try {
-      // Build the request URL
       const url = new URL(API_ENDPOINT);
       url.searchParams.append('appid', APP_ID);
       url.searchParams.append('type', 'app');
@@ -59,7 +49,6 @@
         url.searchParams.append('__bkv', sessionParams.__bkv);
       }
 
-      // Build form data with session parameters
       const formData = new URLSearchParams();
 
       if (sessionParams) {
