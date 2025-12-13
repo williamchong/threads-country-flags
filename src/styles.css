@@ -1,0 +1,42 @@
+/**
+ * Styles for Threads Country Flags extension
+ */
+
+.threads-country-flag {
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 14px;
+  line-height: 1;
+  vertical-align: middle;
+  user-select: none;
+  opacity: 0.9;
+}
+
+/* Ensure flag doesn't break layout */
+.threads-country-flag::before {
+  content: '';
+  display: inline-block;
+  width: 0;
+}
+
+/* Hover effect for better visibility */
+.threads-country-flag:hover {
+  opacity: 1;
+  cursor: help;
+}
+
+/* Animation when flag is added */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+}
+
+.threads-country-flag {
+  animation: fadeIn 0.2s ease-out;
+}

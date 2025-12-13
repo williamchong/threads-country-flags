@@ -1,0 +1,20 @@
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="64" cy="64" r="60" fill="#000000"/>
+
+  <!-- Globe representation -->
+  <circle cx="64" cy="64" r="40" fill="none" stroke="#FFFFFF" stroke-width="3"/>
+
+  <!-- Latitude lines -->
+  <ellipse cx="64" cy="64" rx="40" ry="15" fill="none" stroke="#FFFFFF" stroke-width="2"/>
+  <ellipse cx="64" cy="64" rx="40" ry="25" fill="none" stroke="#FFFFFF" stroke-width="2"/>
+
+  <!-- Longitude line -->
+  <ellipse cx="64" cy="64" rx="15" ry="40" fill="none" stroke="#FFFFFF" stroke-width="2"/>
+
+  <!-- Flag pole -->
+  <line x1="85" y1="35" x2="85" y2="55" stroke="#FF4444" stroke-width="2"/>
+
+  <!-- Flag -->
+  <path d="M 85 35 L 105 40 L 85 45 Z" fill="#FF4444"/>
+</svg>
