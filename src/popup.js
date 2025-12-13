@@ -2,14 +2,59 @@
  * Popup script for Threads Country Flags extension
  */
 
+const STORAGE_PREFIX = 'country_';
+
+// Format bytes to KB/MB
+function formatBytes(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+}
+
+// Get storage statistics
+async function getStorageStats() {
+  try {
+    const allItems = await chrome.storage.local.get(null);
+    const countryKeys = Object.keys(allItems).filter(key => key.startsWith(STORAGE_PREFIX));
+
+    // Calculate approximate storage size
+    const storageString = JSON.stringify(allItems);
+    const storageBytes = new Blob([storageString]).size;
+
+    return {
+      storageSize: countryKeys.length,
+      storageBytes: storageBytes
+    };
+  } catch (error) {
+    console.error('Error getting storage stats:', error);
+    return { storageSize: 0, storageBytes: 0 };
+  }
+}
+
 // Update statistics
 async function updateStats() {
   try {
     const response = await chrome.runtime.sendMessage({ type: 'GET_STATS' });
-    document.getElementById('memorySize').textContent = response.memorySize || 0;
+    const storageStats = await getStorageStats();
+
+    document.getElementById('storageSize').textContent = storageStats.storageSize;
+    document.getElementById('storageBytes').textContent = formatBytes(storageStats.storageBytes);
     document.getElementById('pendingRequests').textContent = response.pendingRequests || 0;
   } catch (error) {
     console.error('Error fetching stats:', error);
+  }
+}
+
+// Clear storage only
+async function clearStorageOnly() {
+  try {
+    const allItems = await chrome.storage.local.get(null);
+    const countryKeys = Object.keys(allItems).filter(key => key.startsWith(STORAGE_PREFIX));
+    await chrome.storage.local.remove(countryKeys);
+    console.log(`Cleared ${countryKeys.length} items from storage`);
+  } catch (error) {
+    console.error('Error clearing storage:', error);
+    throw error;
   }
 }
 
@@ -22,9 +67,11 @@ document.getElementById('clearCache').addEventListener('click', async () => {
   button.textContent = 'Clearing...';
 
   try {
+    // Clear background cache
     await chrome.runtime.sendMessage({ type: 'CLEAR_CACHE' });
 
     // Show success message
+    successMessage.textContent = 'Cache cleared successfully!';
     successMessage.style.display = 'block';
 
     // Update stats
@@ -49,5 +96,9 @@ document.getElementById('clearCache').addEventListener('click', async () => {
 // Initialize
 updateStats();
 
-// Update stats every 2 seconds
-setInterval(updateStats, 2000);
+// Update stats when popup opens
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    updateStats();
+  }
+});
