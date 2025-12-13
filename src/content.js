@@ -301,18 +301,12 @@ function countryNameToFlag(countryName) {
 }
 
 /**
- * Get country display (flag + name or just name if no flag found)
+ * Get country display (just return the country name)
  * @param {string} countryName - Country name
- * @returns {string} Flag emoji + country name, or just country name
+ * @returns {string} Country name
  */
 function getCountryDisplay(countryName) {
-  if (!countryName) return '';
-
-  const flag = countryNameToFlag(countryName);
-
-  // If we have a flag, return just the flag
-  // If no flag found, return the plain text country name
-  return flag || countryName;
+  return countryName || '';
 }
 
 /**
@@ -638,23 +632,23 @@ async function addCountryFlag(linkElement, username) {
           }));
 
           // Wait for response (with timeout)
-          const countryName = await Promise.race([
+          const countryNameRaw = await Promise.race([
             responsePromise,
             new Promise(resolve => setTimeout(() => resolve(null), 10000)) // 10s timeout
           ]);
 
-          // Convert country name to flag emoji
-          const countryDisplay = countryName ? getCountryFlag(countryName) : '';
-          countryCache.set(userId, countryDisplay);
-          
+          // Store country name as-is
+          const countryName = countryNameRaw ? getCountryDisplay(countryNameRaw) : '';
+          countryCache.set(userId, countryName);
+
           // Save to persistent storage if valid (not empty, not 'unknown', not error)
-          if (countryDisplay && countryName && countryName.toLowerCase() !== 'unknown') {
-            await saveCountryToStorage(userId, countryDisplay);
-            console.log(`[Threads Country Flags] 💾 Saved to storage: ${userId} -> ${countryDisplay}`);
+          if (countryName && countryName.toLowerCase() !== 'unknown') {
+            await saveCountryToStorage(userId, countryName);
+            console.log(`[Threads Country Flags] 💾 Saved to storage: ${userId} -> ${countryName}`);
           }
-          
-          console.log(`[Threads Country Flags] 📬 Received country: "${countryDisplay}" for ${userId}`);
-          return countryDisplay;
+
+          console.log(`[Threads Country Flags] 📬 Received country: "${countryName}" for ${userId}`);
+          return countryName;
         } catch (error) {
           console.error('[Threads Country Flags] ❌ Error fetching country:', error);
           return '';
@@ -706,11 +700,15 @@ async function addCountryFlag(linkElement, username) {
     return;
   }
 
+  // Convert country name to flag emoji for display
+  const flagEmoji = countryNameToFlag(country);
+  const displayFlag = flagEmoji || `{${country}}`;
+
   // Create flag element
   const flagSpan = document.createElement('span');
   flagSpan.className = 'threads-country-flag';
-  flagSpan.textContent = ` ${country}`;
-  flagSpan.title = `Country: ${country}`;
+  flagSpan.textContent = ` ${displayFlag}`;
+  flagSpan.title = country;
   flagSpan.style.cssText = 'white-space: nowrap; display: inline; margin-left: 4px;';
 
   // Insert flag right after the display name text (inside the span)
@@ -719,7 +717,7 @@ async function addCountryFlag(linkElement, username) {
   // Mark as processed after successfully adding the flag
   linkElement.setAttribute('data-threads-flag-processed', 'true');
 
-  console.log(`[Threads Country Flags] ✅ Added flag for @${username} (${userId}): ${country}`);
+  console.log(`[Threads Country Flags] ✅ Added flag for @${username} (${userId}): ${displayFlag}`);
 }
 
 
@@ -731,21 +729,21 @@ async function addCountryFlag(linkElement, username) {
 function handleIntersection(entries) {
   for (const entry of entries) {
     const linkElement = entry.target;
-    
+
     if (entry.isIntersecting) {
       // Element entered viewport - start timer
       const username = extractUsernameFromLink(linkElement);
       if (!username) continue;
-      
+
       console.log(`[Threads Country Flags] 👁️ @${username} entered view`);
-      
+
       // Set timer to process after 1 second
       const timer = setTimeout(() => {
         console.log(`[Threads Country Flags] ⏰ @${username} in view for 1s, processing...`);
         addCountryFlag(linkElement, username);
         pendingViewTimers.delete(linkElement);
       }, 1000);
-      
+
       pendingViewTimers.set(linkElement, timer);
     } else {
       // Element left viewport - cancel timer
@@ -768,7 +766,7 @@ function handleIntersection(entries) {
  */
 function observeNewLinks(observer) {
   const profileLinks = findProfileLinks();
-  
+
   for (const link of profileLinks) {
     // Only observe links we haven't observed yet
     if (!observedLinks.has(link)) {
@@ -776,7 +774,7 @@ function observeNewLinks(observer) {
       observedLinks.add(link);
     }
   }
-  
+
   console.log(`[Threads Country Flags] 👀 Observing ${profileLinks.length} profile links`);
 }
 
@@ -789,14 +787,14 @@ function observeNewLinks(observer) {
 function handleMutations(mutations, observer) {
   // Check if any new profile links were added
   let hasNewLinks = false;
-  
+
   for (const mutation of mutations) {
     if (mutation.addedNodes.length > 0) {
       hasNewLinks = true;
       break;
     }
   }
-  
+
   if (hasNewLinks) {
     observeNewLinks(observer);
   }
