@@ -23,8 +23,10 @@ const countryCache = new Map();
 // Store session parameters for API requests
 let sessionParams = null;
 
-// Track pending country requests
+// Track pending country requests by request ID
 const pendingCountryRequests = new Map();
+// Track pending country requests by user ID to prevent duplicates
+const userCountryPromises = new Map();
 let countryRequestId = 0;
 
 // Debounce timer for mutation observer
@@ -261,37 +263,59 @@ async function addCountryFlag(linkElement, username) {
   let country = countryCache.get(userId);
 
   if (!country) {
-    // Request country from injected API (in MAIN world)
-    try {
-      console.log(`[Threads Country Flags] 📡 Requesting country for ${userId}...`);
+    // Check if there's already a pending request for this user
+    if (!userCountryPromises.has(userId)) {
+      // Create new request
+      const countryPromise = (async () => {
+        try {
+          console.log(`[Threads Country Flags] 📡 Requesting country for ${userId}...`);
 
-      // Create a promise that will be resolved when we get the response
-      const requestIdForThis = ++countryRequestId;
-      const countryPromise = new Promise((resolve) => {
-        pendingCountryRequests.set(requestIdForThis, resolve);
-      });
+          // Create a promise that will be resolved when we get the response
+          const requestIdForThis = ++countryRequestId;
+          const responsePromise = new Promise((resolve) => {
+            pendingCountryRequests.set(requestIdForThis, resolve);
+          });
 
-      // Send request to injected API
-      window.dispatchEvent(new CustomEvent('threadsRequestCountry', {
-        detail: {
-          userId: userId,
-          sessionParams: sessionParams,
-          requestId: requestIdForThis
+          // Send request to injected API
+          window.dispatchEvent(new CustomEvent('threadsRequestCountry', {
+            detail: {
+              userId: userId,
+              sessionParams: sessionParams,
+              requestId: requestIdForThis
+            }
+          }));
+
+          // Wait for response (with timeout)
+          const countryName = await Promise.race([
+            responsePromise,
+            new Promise(resolve => setTimeout(() => resolve(null), 10000)) // 10s timeout
+          ]);
+
+          // Convert country name to flag emoji
+          const countryDisplay = countryName ? getCountryFlag(countryName) : '';
+          countryCache.set(userId, countryDisplay);
+          console.log(`[Threads Country Flags] 📬 Received country: "${countryDisplay}" for ${userId}`);
+          return countryDisplay;
+        } catch (error) {
+          console.error('[Threads Country Flags] ❌ Error fetching country:', error);
+          return '';
+        } finally {
+          // Remove from pending map
+          userCountryPromises.delete(userId);
         }
-      }));
+      })();
 
-      // Wait for response (with timeout)
-      const countryName = await Promise.race([
-        countryPromise,
-        new Promise(resolve => setTimeout(() => resolve(null), 10000)) // 10s timeout
-      ]);
+      // Store the promise
+      userCountryPromises.set(userId, countryPromise);
+    } else {
+      console.log(`[Threads Country Flags] ⏳ Waiting for existing request for ${userId}`);
+    }
 
-      // Convert country name to flag emoji
-      country = countryName ? getCountryFlag(countryName) : '';
-      countryCache.set(userId, country);
-      console.log(`[Threads Country Flags] 📬 Received country: "${country}" for ${userId}`);
+    // Wait for the promise to resolve
+    try {
+      country = await userCountryPromises.get(userId);
     } catch (error) {
-      console.error('[Threads Country Flags] ❌ Error fetching country:', error);
+      console.error('[Threads Country Flags] ❌ Error waiting for country:', error);
       return;
     }
   }
