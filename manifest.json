@@ -22,7 +22,7 @@
     },
     {
       "matches": ["https://www.threads.com/*"],
-      "js": ["src/countries.js", "src/content.js"],
+      "js": ["src/content.js"],
       "css": ["src/styles.css"],
       "run_at": "document_start",
       "world": "ISOLATED"
