@@ -40,17 +40,6 @@ async function updateStats() {
   }
 }
 
-async function clearStorageOnly() {
-  try {
-    const allItems = await chrome.storage.local.get(null);
-    const countryKeys = Object.keys(allItems).filter(key => key.startsWith(STORAGE_PREFIX));
-    await chrome.storage.local.remove(countryKeys);
-  } catch (error) {
-    console.error('Error clearing storage:', error);
-    throw error;
-  }
-}
-
 // Clear cache button handler
 document.getElementById('clearCache').addEventListener('click', async () => {
   const button = document.getElementById('clearCache');
