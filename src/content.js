@@ -340,8 +340,11 @@ const pendingCountryRequests = new Map();
 const userCountryPromises = new Map();
 let countryRequestId = 0;
 
-// Debounce timer for mutation observer
-let mutationDebounceTimer = null;
+// Track pending timers for intersection observer
+const pendingViewTimers = new WeakMap();
+
+// Track which links are currently being observed
+const observedLinks = new WeakSet();
 
 /**
  * Listen for GraphQL data from the interceptor script (runs in MAIN world)
@@ -439,8 +442,7 @@ function extractUserDataFromBulkRoute(data) {
 
     console.log(`[Threads Country Flags] 📊 Total users mapped: ${usersFound}, Total in map: ${usernameToIdMap.size}`);
 
-    // Trigger page reprocessing to add flags to newly mapped users
-    processPage();
+    // Note: No need to manually trigger reprocessing - intersection observer handles it
   } catch (error) {
     console.error('[Threads Country Flags] ❌ Error extracting bulk-route data:', error);
   }
@@ -720,38 +722,84 @@ async function addCountryFlag(linkElement, username) {
   console.log(`[Threads Country Flags] ✅ Added flag for @${username} (${userId}): ${country}`);
 }
 
+
+
 /**
- * Process all profile links on the page
+ * Handle intersection events (elements entering/leaving viewport)
+ * @param {IntersectionObserverEntry[]} entries
  */
-function processPage() {
-  const profileLinks = findProfileLinks();
-
-  if (profileLinks.length > 0) {
-    console.log(`[Threads Country Flags] Found ${profileLinks.length} profile links, ${usernameToIdMap.size} usernames mapped`);
-  }
-
-  for (const linkElement of profileLinks) {
-    // Extract username from link
-    const username = extractUsernameFromLink(linkElement);
-    if (!username) {
-      continue;
+function handleIntersection(entries) {
+  for (const entry of entries) {
+    const linkElement = entry.target;
+    
+    if (entry.isIntersecting) {
+      // Element entered viewport - start timer
+      const username = extractUsernameFromLink(linkElement);
+      if (!username) continue;
+      
+      console.log(`[Threads Country Flags] 👁️ @${username} entered view`);
+      
+      // Set timer to process after 1 second
+      const timer = setTimeout(() => {
+        console.log(`[Threads Country Flags] ⏰ @${username} in view for 1s, processing...`);
+        addCountryFlag(linkElement, username);
+        pendingViewTimers.delete(linkElement);
+      }, 1000);
+      
+      pendingViewTimers.set(linkElement, timer);
+    } else {
+      // Element left viewport - cancel timer
+      const timer = pendingViewTimers.get(linkElement);
+      if (timer) {
+        clearTimeout(timer);
+        pendingViewTimers.delete(linkElement);
+        const username = extractUsernameFromLink(linkElement);
+        if (username) {
+          console.log(`[Threads Country Flags] 👋 @${username} left view, timer cancelled`);
+        }
+      }
     }
-
-    // Add flag (function internally checks if already processed before DOM operations)
-    addCountryFlag(linkElement, username);
   }
 }
 
 /**
- * Handle mutations (new content added to page)
- * @param {MutationRecord[]} mutations
+ * Set up intersection observer for new profile links
+ * @param {IntersectionObserver} observer
  */
-function handleMutations(mutations) {
-  // Debounce to avoid excessive processing
-  clearTimeout(mutationDebounceTimer);
-  mutationDebounceTimer = setTimeout(() => {
-    processPage();
-  }, 500);
+function observeNewLinks(observer) {
+  const profileLinks = findProfileLinks();
+  
+  for (const link of profileLinks) {
+    // Only observe links we haven't observed yet
+    if (!observedLinks.has(link)) {
+      observer.observe(link);
+      observedLinks.add(link);
+    }
+  }
+  
+  console.log(`[Threads Country Flags] 👀 Observing ${profileLinks.length} profile links`);
+}
+
+/**
+ * Handle mutations (new content added to page) - lighter version
+ * Just sets up observers for new links
+ * @param {MutationRecord[]} mutations
+ * @param {IntersectionObserver} observer
+ */
+function handleMutations(mutations, observer) {
+  // Check if any new profile links were added
+  let hasNewLinks = false;
+  
+  for (const mutation of mutations) {
+    if (mutation.addedNodes.length > 0) {
+      hasNewLinks = true;
+      break;
+    }
+  }
+  
+  if (hasNewLinks) {
+    observeNewLinks(observer);
+  }
 }
 
 /**
@@ -761,23 +809,29 @@ function init() {
   console.log('[Threads Country Flags] Content script initialized (ISOLATED world)');
   console.log('[Threads Country Flags] Listening for GraphQL data from interceptor (MAIN world)');
 
-  // Process initial page content
+  // Set up intersection observer to track elements in viewport
+  const intersectionObserver = new IntersectionObserver(handleIntersection, {
+    root: null, // viewport
+    rootMargin: '50px', // Start observing slightly before element enters viewport
+    threshold: 0.1 // Trigger when 10% of element is visible
+  });
+
+  // Observe initial profile links after GraphQL data arrives
   setTimeout(() => {
-    processPage();
-  }, 2000); // Wait for GraphQL data to arrive
+    observeNewLinks(intersectionObserver);
+  }, 2000);
 
-  // Set up mutation observer for dynamic content
-  const observer = new MutationObserver(handleMutations);
+  // Set up mutation observer for dynamic content (just to find new links to observe)
+  const mutationObserver = new MutationObserver((mutations) => {
+    handleMutations(mutations, intersectionObserver);
+  });
 
-  observer.observe(document.body, {
+  mutationObserver.observe(document.body, {
     childList: true,
     subtree: true
   });
 
-  // // Re-process page periodically as fallback
-  // setInterval(() => {
-  //   processPage();
-  // }, 5000);
+  console.log('[Threads Country Flags] ✅ Intersection observer initialized');
 }
 
 // Wait for page to be ready
