@@ -49,7 +49,6 @@ async function clearStorageOnly() {
     const allItems = await chrome.storage.local.get(null);
     const countryKeys = Object.keys(allItems).filter(key => key.startsWith(STORAGE_PREFIX));
     await chrome.storage.local.remove(countryKeys);
-    console.log(`Cleared ${countryKeys.length} items from storage`);
   } catch (error) {
     console.error('Error clearing storage:', error);
     throw error;

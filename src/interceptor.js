@@ -92,8 +92,6 @@
 
     // Intercept /bulk-route-definitions for username → user_id mapping
     if (typeof url === 'string' && url.includes('/bulk-route-definitions')) {
-      console.log(`[Threads Country Flags] 🎯 bulk-route-definitions request detected!`);
-
       // Capture request body to extract usernames from route_urls
       const requestBody = args[0];
 
@@ -105,7 +103,6 @@
             detail: sessionParams
           }));
           sessionParamsCaptured = true;
-          console.log('[Threads Country Flags] 📋 Session parameters captured and sent (XHR)');
         }
       }
 
@@ -118,11 +115,9 @@
             let responseText = this.responseText;
             if (responseText.startsWith('for (;;);')) {
               responseText = responseText.substring(9);
-              console.log('[Threads Country Flags] Removed "for (;;);" prefix');
             }
 
             const response = JSON.parse(responseText);
-            console.log('[Threads Country Flags] ✅ bulk-route-definitions response parsed');
 
             // Send combined request + response to content script
             window.dispatchEvent(new CustomEvent('threadsBulkRouteData', {
@@ -131,7 +126,6 @@
                 response: response
               }
             }));
-            console.log('[Threads Country Flags] 📤 bulk-route-definitions data sent to content script');
           } catch (error) {
             console.error('[Threads Country Flags] ❌ Error parsing bulk-route-definitions:', error);
           }

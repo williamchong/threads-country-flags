@@ -49,8 +49,6 @@
    */
   async function fetchUserCountry(userId, sessionParams) {
     try {
-      console.log(`[Threads Country Flags] 🌍 Fetching country for user ${userId}...`);
-
       // Build the request URL
       const url = new URL(API_ENDPOINT);
       url.searchParams.append('appid', APP_ID);
@@ -125,7 +123,6 @@
       const data = parseThreadsResponse(responseText);
       const country = extractCountryFromResponse(data);
 
-      console.log(`[Threads Country Flags] ✅ Country for ${userId}: ${country || 'none'}`);
       return country;
 
     } catch (error) {
@@ -137,7 +134,6 @@
   // Listen for country fetch requests from content script
   window.addEventListener('threadsRequestCountry', async (event) => {
     const { userId, sessionParams, requestId } = event.detail;
-    console.log(`[Threads Country Flags] 📥 Country request for ${userId} (request #${requestId})`);
 
     const countryName = await fetchUserCountry(userId, sessionParams);
 
@@ -150,6 +146,4 @@
       }
     }));
   });
-
-  console.log('[Threads Country Flags] 🌍 API injected script loaded in MAIN world');
 })();

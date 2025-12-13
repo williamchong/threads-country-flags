@@ -344,7 +344,6 @@ const observedLinks = new WeakSet();
  * Listen for bulk-route-definitions data for username → user_id mapping
  */
 window.addEventListener('threadsBulkRouteData', (event) => {
-  console.log('[Threads Country Flags] 📥 Received bulk-route-definitions data');
   extractUserDataFromBulkRoute(event.detail);
 });
 
@@ -353,8 +352,6 @@ window.addEventListener('threadsBulkRouteData', (event) => {
  */
 window.addEventListener('threadsSessionParams', (event) => {
   sessionParams = event.detail;
-  console.log('[Threads Country Flags] 📥 Received session parameters');
-  console.log('[Threads Country Flags] Session params:', sessionParams);
 });
 
 /**
@@ -362,7 +359,6 @@ window.addEventListener('threadsSessionParams', (event) => {
  */
 window.addEventListener('threadsCountryResponse', (event) => {
   const { userId, countryName, requestId } = event.detail;
-  console.log(`[Threads Country Flags] 📬 Country response for ${userId}: ${countryName || 'none'} (request #${requestId})`);
 
   // Resolve pending promise
   const resolve = pendingCountryRequests.get(requestId);
@@ -377,8 +373,6 @@ window.addEventListener('threadsCountryResponse', (event) => {
  * @param {Object} data - Object with requestBody and response
  */
 function extractUserDataFromBulkRoute(data) {
-  console.log('[Threads Country Flags] 🔍 Extracting user data from bulk-route-definitions...');
-
   try {
     const { requestBody, response } = data;
 
@@ -392,8 +386,6 @@ function extractUserDataFromBulkRoute(data) {
         routeUrls.push(decodeURIComponent(value));
       }
     }
-
-    console.log(`[Threads Country Flags] Found ${routeUrls.length} route URLs in request`);
 
     let usersFound = 0;
     const payload = response?.payload?.payloads || {};
@@ -420,11 +412,8 @@ function extractUserDataFromBulkRoute(data) {
       if (userId) {
         usernameToIdMap.set(username, userId);
         usersFound++;
-        console.log(`[Threads Country Flags] ✅ Mapped: @${username} → ${userId}`);
       }
     }
-
-    console.log(`[Threads Country Flags] 📊 Total users mapped: ${usersFound}, Total in map: ${usernameToIdMap.size}`);
 
     // Note: No need to manually trigger reprocessing - intersection observer handles it
   } catch (error) {
@@ -538,7 +527,6 @@ async function addCountryFlag(linkElement, username) {
 
   // Skip if link contains or is near an image/svg (profile picture) or inside h1
   if (linkElement.querySelector('img, svg') || linkElement.closest('img') || linkElement.closest('svg') || linkElement.closest('h1')) {
-    console.log(`[Threads Country Flags] ⏭️ Skipping @${username} - near/contains image/svg or inside h1`);
     return;
   }
 
@@ -546,12 +534,9 @@ async function addCountryFlag(linkElement, username) {
   const userId = usernameToIdMap.get(username);
 
   if (!userId) {
-    console.log(`[Threads Country Flags] ⏸️ No user ID for @${username} yet`);
     // We don't have the user ID yet - it will be added when GraphQL data arrives
     return;
   }
-
-  console.log(`[Threads Country Flags] 🔍 Processing @${username} (${userId})`);
 
   // Check memory cache first
   let country = countryCache.get(userId);
@@ -560,7 +545,6 @@ async function addCountryFlag(linkElement, username) {
   if (!country) {
     country = await getCountryFromStorage(userId);
     if (country) {
-      console.log(`[Threads Country Flags] 💾 Loaded from storage for ${userId}: ${country}`);
       countryCache.set(userId, country);
     }
   }
@@ -571,8 +555,6 @@ async function addCountryFlag(linkElement, username) {
       // Create new request
       const countryPromise = (async () => {
         try {
-          console.log(`[Threads Country Flags] 📡 Requesting country for ${userId}...`);
-
           // Create a promise that will be resolved when we get the response
           const requestIdForThis = ++countryRequestId;
           const responsePromise = new Promise((resolve) => {
@@ -601,10 +583,8 @@ async function addCountryFlag(linkElement, username) {
           // Save to persistent storage if valid (not empty, not 'unknown', not error)
           if (countryName && countryName.toLowerCase() !== 'unknown') {
             await saveCountryToStorage(userId, countryName);
-            console.log(`[Threads Country Flags] 💾 Saved to storage: ${userId} -> ${countryName}`);
           }
 
-          console.log(`[Threads Country Flags] 📬 Received country: "${countryName}" for ${userId}`);
           return countryName;
         } catch (error) {
           console.error('[Threads Country Flags] ❌ Error fetching country:', error);
@@ -617,8 +597,6 @@ async function addCountryFlag(linkElement, username) {
 
       // Store the promise
       userCountryPromises.set(userId, countryPromise);
-    } else {
-      console.log(`[Threads Country Flags] ⏳ Waiting for existing request for ${userId}`);
     }
 
     // Wait for the promise to resolve
@@ -632,7 +610,6 @@ async function addCountryFlag(linkElement, username) {
 
   // If no country data, skip
   if (!country) {
-    console.log(`[Threads Country Flags] ⚠️ No country data for @${username} (${userId})`);
     return;
   }
 
@@ -645,14 +622,12 @@ async function addCountryFlag(linkElement, username) {
       // Mark as processed if flag exists but wasn't marked
       linkElement.setAttribute('data-threads-flag-processed', 'true');
     }
-    console.log(`[Threads Country Flags] ⏭️ Already processed @${username}, skipping`);
     return;
   }
 
   // Find where to insert the flag
   const insertionPoint = findInsertionPoint(linkElement);
   if (!insertionPoint) {
-    console.log(`[Threads Country Flags] ⚠️ No insertion point found for @${username}`);
     linkElement.setAttribute('data-threads-flag-processed', 'true');
     return;
   }
@@ -673,8 +648,6 @@ async function addCountryFlag(linkElement, username) {
 
   // Mark as processed after successfully adding the flag
   linkElement.setAttribute('data-threads-flag-processed', 'true');
-
-  console.log(`[Threads Country Flags] ✅ Added flag for @${username} (${userId}): ${displayFlag}`);
 }
 
 
@@ -692,11 +665,8 @@ function handleIntersection(entries) {
       const username = extractUsernameFromLink(linkElement);
       if (!username) continue;
 
-      console.log(`[Threads Country Flags] 👁️ @${username} entered view`);
-
       // Set timer to process after 1 second
       const timer = setTimeout(() => {
-        console.log(`[Threads Country Flags] ⏰ @${username} in view for 1s, processing...`);
         addCountryFlag(linkElement, username);
         pendingViewTimers.delete(linkElement);
       }, 1000);
@@ -708,10 +678,6 @@ function handleIntersection(entries) {
       if (timer) {
         clearTimeout(timer);
         pendingViewTimers.delete(linkElement);
-        const username = extractUsernameFromLink(linkElement);
-        if (username) {
-          console.log(`[Threads Country Flags] 👋 @${username} left view, timer cancelled`);
-        }
       }
     }
   }
@@ -731,8 +697,6 @@ function observeNewLinks(observer) {
       observedLinks.add(link);
     }
   }
-
-  console.log(`[Threads Country Flags] 👀 Observing ${profileLinks.length} profile links`);
 }
 
 /**

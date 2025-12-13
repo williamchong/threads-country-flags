@@ -9,7 +9,6 @@
 async function clearAllCaches() {
   try {
     await chrome.storage.local.clear();
-    console.log('[Cache] All caches cleared');
   } catch (error) {
     console.error('Error clearing storage:', error);
   }
@@ -29,5 +28,3 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 });
-
-console.log('[Background] Threads Country Flags extension loaded');
