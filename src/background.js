@@ -3,9 +3,13 @@
  * Handles API calls, caching, and message passing
  */
 
+const STORAGE_PREFIX = 'country_';
+
 async function clearAllCaches() {
   try {
-    await chrome.storage.local.clear();
+    const allItems = await chrome.storage.local.get(null);
+    const countryKeys = Object.keys(allItems).filter(key => key.startsWith(STORAGE_PREFIX));
+    await chrome.storage.local.remove(countryKeys);
   } catch (error) {
     console.error('Error clearing storage:', error);
   }
