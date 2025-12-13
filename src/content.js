@@ -87,7 +87,6 @@ const COUNTRY_MAPPINGS = {
   'italy': 'IT',
   'italia': 'IT',
   '意大利': 'IT',
-  '意大利': 'IT',
 
   // Spain
   'spain': 'ES',
@@ -293,14 +292,6 @@ function getCountryCode(countryName) {
 function countryNameToFlag(countryName) {
   const code = getCountryCode(countryName);
   return code ? countryCodeToFlag(code) : '';
-}
-
-function getCountryDisplay(countryName) {
-  return countryName || '';
-}
-
-function getCountryFlag(countryName) {
-  return getCountryDisplay(countryName);
 }
 
 // Track username to user ID mapping (built from GraphQL responses)
@@ -512,8 +503,8 @@ async function addCountryFlag(linkElement, username) {
     return;
   }
 
-  // Skip if link contains or is near an image/svg (profile picture) or inside h1
-  if (linkElement.querySelector('img, svg') || linkElement.closest('img') || linkElement.closest('svg') || linkElement.closest('h1')) {
+  // Skip if link contains an image/svg (profile picture) or inside h1
+  if (linkElement.querySelector('img, svg') || linkElement.closest('h1')) {
     return;
   }
 
@@ -564,7 +555,7 @@ async function addCountryFlag(linkElement, username) {
           ]);
 
           // Store country name as-is
-          const countryName = countryNameRaw ? getCountryDisplay(countryNameRaw) : '';
+          const countryName = countryNameRaw || '';
           countryCache.set(userId, countryName);
 
           // Save to persistent storage if valid (not empty, not 'unknown', not error)
