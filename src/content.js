@@ -297,7 +297,7 @@ function countryNameToFlag(countryName) {
 // Track username to user ID mapping (built from GraphQL responses)
 const usernameToIdMap = new Map();
 
-// Track user ID to country mapping
+// Track user ID to country mapping (memory: {countryName, joinDate (ms timestamp), isNewUser})
 const countryCache = new Map();
 
 // Storage key prefix for persistent cache
@@ -319,6 +319,45 @@ const pendingViewTimers = new WeakMap();
 const observedLinks = new WeakSet();
 
 /**
+ * Format join date timestamp for display
+ * @param {number} joinDateMs - Timestamp in milliseconds
+ * @returns {string} Formatted date string (e.g., "February 2024")
+ */
+function formatJoinDate(joinDateMs) {
+  if (!joinDateMs || typeof joinDateMs !== 'number') return '';
+
+  try {
+    return new Date(joinDateMs).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long'
+    });
+  } catch (error) {
+    return '';
+  }
+}
+
+/**
+ * Check if a join date indicates a new user (joined within last 60 days)
+ * @param {number} joinDateMs - Timestamp in milliseconds
+ * @returns {boolean} True if user joined within last 60 days
+ */
+function isNewUser(joinDateMs) {
+  if (!joinDateMs || typeof joinDateMs !== 'number') return false;
+
+  try {
+    const joinDate = new Date(joinDateMs);
+    const now = new Date();
+
+    // Check if within last 60 days (roughly 2 months)
+    const daysDiff = (now - joinDate) / (1000 * 60 * 60 * 24);
+    return daysDiff >= 0 && daysDiff <= 60;
+  } catch (error) {
+    console.error('[Threads Country Flags] Error checking new user:', error);
+    return false;
+  }
+}
+
+/**
  * Listen for bulk-route-definitions data for username → user_id mapping
  */
 window.addEventListener('threadsBulkRouteData', (event) => {
@@ -336,13 +375,13 @@ window.addEventListener('threadsSessionParams', (event) => {
  * Listen for country responses from injected API
  */
 window.addEventListener('threadsCountryResponse', (event) => {
-  const { userId, countryName, requestId } = event.detail;
+  const { userId, countryName, joinDate, requestId } = event.detail;
 
-  // Resolve pending promise
+  // Resolve pending promise with full user info
   const resolve = pendingCountryRequests.get(requestId);
   if (resolve) {
     pendingCountryRequests.delete(requestId);
-    resolve(countryName);
+    resolve({ countryName, joinDate });
   }
 });
 
@@ -416,13 +455,28 @@ function extractUsernameFromLink(element) {
 /**
  * Get country from persistent storage
  * @param {string} userId
- * @returns {Promise<string|null>}
+ * @returns {Promise<Object|null>} Object with {countryName, joinDate (ms), isNewUser} (isNewUser calculated)
  */
 async function getCountryFromStorage(userId) {
   try {
     const key = STORAGE_PREFIX + userId;
     const result = await chrome.storage.local.get(key);
-    return result[key] || null;
+    const stored = result[key];
+
+    // Handle legacy string format (old cache)
+    if (typeof stored === 'string') {
+      return { countryName: stored, joinDate: null, isNewUser: false };
+    }
+
+    if (stored) {
+      // Dynamically calculate isNewUser when loading from storage
+      return {
+        ...stored,
+        isNewUser: isNewUser(stored.joinDate)
+      };
+    }
+
+    return null;
   } catch (error) {
     console.error('[Threads Country Flags] Error reading from storage:', error);
     return null;
@@ -432,12 +486,17 @@ async function getCountryFromStorage(userId) {
 /**
  * Save country to persistent storage
  * @param {string} userId
- * @param {string} country
+ * @param {Object} userInfo - Object with {countryName, joinDate (ms)} (isNewUser not saved)
  */
-async function saveCountryToStorage(userId, country) {
+async function saveCountryToStorage(userId, userInfo) {
   try {
     const key = STORAGE_PREFIX + userId;
-    await chrome.storage.local.set({ [key]: country });
+    // Only save countryName and joinDate to persistent storage
+    const dataToSave = {
+      countryName: userInfo.countryName,
+      joinDate: userInfo.joinDate
+    };
+    await chrome.storage.local.set({ [key]: dataToSave });
   } catch (error) {
     console.error('[Threads Country Flags] Error saving to storage:', error);
   }
@@ -545,17 +604,17 @@ async function addCountryFlag(linkElement, username) {
   }
 
   // Check memory cache first
-  let country = countryCache.get(userId);
+  let userInfo = countryCache.get(userId);
 
   // If not in memory, check persistent storage
-  if (!country) {
-    country = await getCountryFromStorage(userId);
-    if (country) {
-      countryCache.set(userId, country);
+  if (!userInfo) {
+    userInfo = await getCountryFromStorage(userId);
+    if (userInfo) {
+      countryCache.set(userId, userInfo);
     }
   }
 
-  if (!country) {
+  if (!userInfo) {
     // Check if there's already a pending request for this user
     if (!userCountryPromises.has(userId)) {
       // Create new request
@@ -577,24 +636,32 @@ async function addCountryFlag(linkElement, username) {
           }));
 
           // Wait for response (with timeout)
-          const countryNameRaw = await Promise.race([
+          const apiResponse = await Promise.race([
             responsePromise,
             new Promise(resolve => setTimeout(() => resolve(null), 10000)) // 10s timeout
           ]);
 
-          // Store country name as-is
-          const countryName = countryNameRaw || '';
-          countryCache.set(userId, countryName);
+          // Build user info object
+          const countryName = apiResponse?.countryName || '';
+          const joinDate = apiResponse?.joinDate || null;
+
+          const info = {
+            countryName,
+            joinDate,
+            isNewUser: isNewUser(joinDate)
+          };
+
+          countryCache.set(userId, info);
 
           // Save to persistent storage if valid (not empty, not 'unknown', not error)
           if (countryName && countryName.toLowerCase() !== 'unknown') {
-            await saveCountryToStorage(userId, countryName);
+            await saveCountryToStorage(userId, info);
           }
 
-          return countryName;
+          return info;
         } catch (error) {
           console.error('[Threads Country Flags] ❌ Error fetching country:', error);
-          return '';
+          return { countryName: '', joinDate: null, isNewUser: false };
         } finally {
           // Remove from pending map
           userCountryPromises.delete(userId);
@@ -607,7 +674,7 @@ async function addCountryFlag(linkElement, username) {
 
     // Wait for the promise to resolve
     try {
-      country = await userCountryPromises.get(userId);
+      userInfo = await userCountryPromises.get(userId);
     } catch (error) {
       console.error('[Threads Country Flags] ❌ Error waiting for country:', error);
       return;
@@ -615,7 +682,7 @@ async function addCountryFlag(linkElement, username) {
   }
 
   // If no country data, skip
-  if (!country) {
+  if (!userInfo || !userInfo.countryName) {
     return;
   }
 
@@ -639,14 +706,21 @@ async function addCountryFlag(linkElement, username) {
   }
 
   // Convert country name to flag emoji for display
-  const flagEmoji = countryNameToFlag(country);
-  const displayFlag = flagEmoji || `{${country}}`;
+  const flagEmoji = countryNameToFlag(userInfo.countryName);
+  const displayFlag = flagEmoji || `{${userInfo.countryName}}`;
+
+  // Add new user badge if applicable (from memory cache)
+  const newUserBadge = userInfo.isNewUser ? ' 🔰' : '';
+  const formattedDate = userInfo.joinDate ? formatJoinDate(userInfo.joinDate) : '';
+  const titleText = userInfo.isNewUser && formattedDate
+    ? `${userInfo.countryName} (New user: ${formattedDate})`
+    : userInfo.countryName;
 
   // Create flag element
   const flagSpan = document.createElement('span');
   flagSpan.className = 'threads-country-flag';
-  flagSpan.textContent = ` ${displayFlag}`;
-  flagSpan.title = country;
+  flagSpan.textContent = ` ${displayFlag}${newUserBadge}`;
+  flagSpan.title = titleText;
   flagSpan.style.cssText = 'white-space: nowrap; display: inline; margin-left: 4px;';
 
   // Insert flag right after the display name text (inside the span)

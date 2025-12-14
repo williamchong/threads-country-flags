@@ -7,11 +7,21 @@
   const API_ENDPOINT = 'https://www.threads.com/async/wbloks/fetch/';
   const APP_ID = 'com.bloks.www.text_post_app.about_this_profile_async_action';
 
+  /**
+   * Parse Threads API response by removing CSRF protection prefix
+   * @param {string} responseText - Raw API response text
+   * @returns {Object} Parsed JSON object
+   */
   function parseThreadsResponse(responseText) {
     const jsonText = responseText.replace(/^for\s*\(\s*;\s*;\s*\)\s*;/, '');
     return JSON.parse(jsonText);
   }
 
+  /**
+   * Extract country and join date from API response
+   * @param {Object} response - Parsed API response
+   * @returns {{countryName: string|null, joinDate: number|null}|null} User info or null on error
+   */
   function extractCountryFromResponse(response) {
     try {
       const data = response?.payload?.layout?.bloks_payload?.data;
@@ -27,17 +37,121 @@
         item => item?.data?.key === 'THREADS_ABOUT_THIS_PROFILE:about_this_profile_country_visibility'
       );
 
+      let countryName = null;
       if (visibilityData?.data?.initial && countryData?.data?.initial) {
-        return countryData.data.initial;
+        countryName = countryData.data.initial;
       }
 
-      return null;
+      // Extract join date by looking for text matching pattern: 20xx year + separator + stats
+      const joinDate = extractJoinDate(response);
+
+      return {
+        countryName,
+        joinDate
+      };
     } catch (error) {
       console.error('[Threads Country Flags] Error extracting country:', error);
       return null;
     }
   }
 
+  /**
+   * Extract join date timestamp from API response
+   * NOTE: Returns timestamp for first day of the month (day precision not available)
+   * @param {Object} response - Parsed API response
+   * @returns {number|null} Unix timestamp in milliseconds, or null if not found or parsing failed
+   */
+  function extractJoinDate(response) {
+    try {
+      // Convert response to JSON string and search for date pattern
+      // This is much simpler than recursive object traversal
+      const responseStr = JSON.stringify(response);
+
+      // Pattern: "text":"<date with year 20XX and separator · or •>"
+      // Matches: "December 2025 · 100M+", "2025年12月 · 1 億+", "July 2023 · #14,233,984"
+      // Use lookahead/lookbehind to extract just the text value
+      const textPattern = /"text":"([^"]*\b20\d{2}\b[^"]*?[·•][^"]*)"/;
+      const match = responseStr.match(textPattern);
+
+      const dateText = match ? match[1] : null;
+      if (!dateText) return null;
+
+      // Parse year and month from text
+      const yearMatch = dateText.match(/20(\d{2})/);
+      if (!yearMatch) return null;
+
+      const year = parseInt('20' + yearMatch[1], 10);
+
+      // Try to parse month - check English month names FIRST to avoid false positives
+      let month = null;
+
+      // First: Try English month names (handles "December 2025", "Dec 2025", etc.)
+      const monthNames = {
+        'january': 1, 'jan': 1,
+        'february': 2, 'feb': 2,
+        'march': 3, 'mar': 3,
+        'april': 4, 'apr': 4,
+        'may': 5,
+        'june': 6, 'jun': 6,
+        'july': 7, 'jul': 7,
+        'august': 8, 'aug': 8,
+        'september': 9, 'sep': 9, 'sept': 9,
+        'october': 10, 'oct': 10,
+        'november': 11, 'nov': 11,
+        'december': 12, 'dec': 12
+      };
+
+      const lowerText = dateText.toLowerCase();
+      for (const [name, num] of Object.entries(monthNames)) {
+        if (lowerText.includes(name)) {
+          month = num;
+          break;
+        }
+      }
+
+      // Second: If no English month found, extract numeric month by digit count
+      // Strategy: Find 1-2 digit numbers that aren't part of the 4-digit year
+      if (!month) {
+        // Extract date portion (before separator to avoid matching stats like "100M+")
+        const datePortion = dateText.split(/[·•]/)[0];
+
+        // Find all 1-2 digit numbers NOT part of 4-digit sequences
+        // Use negative lookbehind/lookahead to exclude digits that are part of longer numbers
+        const monthCandidates = datePortion.match(/(?<!\d)\d{1,2}(?!\d)/g);
+
+        if (monthCandidates) {
+          // Find first number that's a valid month (1-12)
+          for (const candidate of monthCandidates) {
+            const num = parseInt(candidate, 10);
+            if (num >= 1 && num <= 12) {
+              month = num;
+              break;
+            }
+          }
+        }
+      }
+
+      if (!month || month < 1 || month > 12) {
+        // Return null if month cannot be reliably parsed (may be unsupported locale)
+        return null;
+      }
+
+      // Create date object (first day of the month) and return timestamp
+      const date = new Date(year, month - 1, 1);
+      return date.getTime();
+
+    } catch (error) {
+      console.error('[Threads Country Flags] Error extracting join date:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Fetch user country and join date from Threads API
+   * @param {string} userId - Numeric user ID
+   * @param {Object} sessionParams - Session parameters captured from page
+   * @returns {Promise<{countryName: string|null, joinDate: number|null}|null>} User info or null on error
+   */
   async function fetchUserCountry(userId, sessionParams) {
     // Don't attempt API call if sessionParams is not set
     if (!sessionParams) {
@@ -108,9 +222,9 @@
 
       const responseText = await response.text();
       const data = parseThreadsResponse(responseText);
-      const country = extractCountryFromResponse(data);
+      const result = extractCountryFromResponse(data);
 
-      return country;
+      return result;
 
     } catch (error) {
       console.error('[Threads Country Flags] ❌ Error fetching country:', error);
@@ -122,13 +236,14 @@
   window.addEventListener('threadsRequestCountry', async (event) => {
     const { userId, sessionParams, requestId } = event.detail;
 
-    const countryName = await fetchUserCountry(userId, sessionParams);
+    const userInfo = await fetchUserCountry(userId, sessionParams);
 
     // Send response back to content script
     window.dispatchEvent(new CustomEvent('threadsCountryResponse', {
       detail: {
         userId,
-        countryName,
+        countryName: userInfo?.countryName || null,
+        joinDate: userInfo?.joinDate || null,
         requestId
       }
     }));
