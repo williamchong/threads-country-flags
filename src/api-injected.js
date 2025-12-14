@@ -39,50 +39,48 @@
   }
 
   async function fetchUserCountry(userId, sessionParams) {
+    // Don't attempt API call if sessionParams is not set
+    if (!sessionParams) {
+      console.warn('[Threads Country Flags] ⚠️ sessionParams not available, skipping API call');
+      return null;
+    }
+
     try {
       const url = new URL(API_ENDPOINT);
       url.searchParams.append('appid', APP_ID);
       url.searchParams.append('type', 'app');
 
       // Add __bkv (versioningID) to URL if available
-      if (sessionParams && sessionParams.__bkv) {
+      if (sessionParams.__bkv) {
         url.searchParams.append('__bkv', sessionParams.__bkv);
       }
 
       const formData = new URLSearchParams();
 
-      if (sessionParams) {
-        if (sessionParams.fb_dtsg) formData.append('fb_dtsg', sessionParams.fb_dtsg);
-        if (sessionParams.jazoest) formData.append('jazoest', sessionParams.jazoest);
-        if (sessionParams.lsd) formData.append('lsd', sessionParams.lsd);
-        formData.append('__user', sessionParams.__user || '0');
-        formData.append('__a', sessionParams.__a || '1');
-        formData.append('__req', Math.random().toString(16).substring(2, 4));
-        if (sessionParams.__hs) formData.append('__hs', sessionParams.__hs);
-        if (sessionParams.dpr) formData.append('dpr', sessionParams.dpr);
-        if (sessionParams.__ccg) formData.append('__ccg', sessionParams.__ccg);
-        if (sessionParams.__rev) formData.append('__rev', sessionParams.__rev);
-        if (sessionParams.__s) formData.append('__s', sessionParams.__s);
-        if (sessionParams.__hsi) formData.append('__hsi', sessionParams.__hsi);
-        if (sessionParams.__dyn) formData.append('__dyn', sessionParams.__dyn);
-        if (sessionParams.__csr) formData.append('__csr', sessionParams.__csr);
-        if (sessionParams.__hsdp) formData.append('__hsdp', sessionParams.__hsdp);
-        if (sessionParams.__hblp) formData.append('__hblp', sessionParams.__hblp);
-        if (sessionParams.__sjsp) formData.append('__sjsp', sessionParams.__sjsp);
-        if (sessionParams.__comet_req) formData.append('__comet_req', sessionParams.__comet_req);
-        if (sessionParams.__spin_r) formData.append('__spin_r', sessionParams.__spin_r);
-        if (sessionParams.__spin_b) formData.append('__spin_b', sessionParams.__spin_b);
-        if (sessionParams.__spin_t) formData.append('__spin_t', sessionParams.__spin_t);
-        if (sessionParams.__jssesw) formData.append('__jssesw', sessionParams.__jssesw);
-        formData.append('__crn', sessionParams.__crn || 'comet.threads.BarcelonaProfileThreadsColumnRoute');
-        formData.append('__d', sessionParams.__d || 'www');
-      } else {
-        formData.append('__user', '0');
-        formData.append('__a', '1');
-        formData.append('__req', Math.random().toString(16).substring(2, 4));
-        formData.append('__crn', 'comet.threads.BarcelonaProfileThreadsColumnRoute');
-        formData.append('__d', 'www');
-      }
+      if (sessionParams.fb_dtsg) formData.append('fb_dtsg', sessionParams.fb_dtsg);
+      if (sessionParams.jazoest) formData.append('jazoest', sessionParams.jazoest);
+      if (sessionParams.lsd) formData.append('lsd', sessionParams.lsd);
+      formData.append('__user', sessionParams.__user || '0');
+      formData.append('__a', sessionParams.__a || '1');
+      formData.append('__req', Math.random().toString(16).substring(2, 4));
+      if (sessionParams.__hs) formData.append('__hs', sessionParams.__hs);
+      if (sessionParams.dpr) formData.append('dpr', sessionParams.dpr);
+      if (sessionParams.__ccg) formData.append('__ccg', sessionParams.__ccg);
+      if (sessionParams.__rev) formData.append('__rev', sessionParams.__rev);
+      if (sessionParams.__s) formData.append('__s', sessionParams.__s);
+      if (sessionParams.__hsi) formData.append('__hsi', sessionParams.__hsi);
+      if (sessionParams.__dyn) formData.append('__dyn', sessionParams.__dyn);
+      if (sessionParams.__csr) formData.append('__csr', sessionParams.__csr);
+      if (sessionParams.__hsdp) formData.append('__hsdp', sessionParams.__hsdp);
+      if (sessionParams.__hblp) formData.append('__hblp', sessionParams.__hblp);
+      if (sessionParams.__sjsp) formData.append('__sjsp', sessionParams.__sjsp);
+      if (sessionParams.__comet_req) formData.append('__comet_req', sessionParams.__comet_req);
+      if (sessionParams.__spin_r) formData.append('__spin_r', sessionParams.__spin_r);
+      if (sessionParams.__spin_b) formData.append('__spin_b', sessionParams.__spin_b);
+      if (sessionParams.__spin_t) formData.append('__spin_t', sessionParams.__spin_t);
+      if (sessionParams.__jssesw) formData.append('__jssesw', sessionParams.__jssesw);
+      formData.append('__crn', sessionParams.__crn || 'comet.threads.BarcelonaProfileThreadsColumnRoute');
+      formData.append('__d', sessionParams.__d || 'www');
 
       // Add the params object with target_user_id
       const params = {
