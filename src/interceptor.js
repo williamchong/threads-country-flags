@@ -6,12 +6,18 @@
 (function () {
   console.log('[Threads Country Flags] Interceptor script starting...');
   let sessionParamsCaptured = false;
+  let cachedVersioningID = null;
 
   /**
-   * Extract versioningID from page scripts
+   * Extract versioningID from page scripts (cached after first extraction)
    * @returns {string|null} versioningID value
    */
   function extractVersioningID() {
+    // Return cached value if available
+    if (cachedVersioningID) {
+      return cachedVersioningID;
+    }
+
     try {
       // Search in all script tags for WebBloksVersioningID
       const scripts = document.querySelectorAll('script');
@@ -21,7 +27,9 @@
           // Match pattern: ["WebBloksVersioningID",[],{"versioningID":"..."}
           const match = content.match(/"versioningID":"([a-f0-9]+)"/);
           if (match) {
-            return match[1];
+            cachedVersioningID = match[1];
+            console.log('[Threads Country Flags] Cached versioningID:', cachedVersioningID);
+            return cachedVersioningID;
           }
         }
       }
