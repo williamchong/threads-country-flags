@@ -493,6 +493,34 @@ function findInsertionPoint(linkElement) {
 }
 
 /**
+ * Check if a link should be skipped because it only contains an image
+ * @param {HTMLElement} linkElement - Profile link element
+ * @returns {boolean} True if should skip
+ */
+function shouldSkipImageLink(linkElement) {
+  const hasImage = linkElement.querySelector('img, svg');
+  if (!hasImage) return false; // No image, don't skip
+
+  // Check if there are any text-containing spans or divs with actual visible text
+  const textElements = Array.from(linkElement.querySelectorAll('span, div')).filter(el => {
+    // Get text content excluding SVG content
+    let textContent = el.textContent || '';
+
+    // Remove text from any SVG elements inside
+    const svgs = el.querySelectorAll('svg');
+    for (const svg of svgs) {
+      textContent = textContent.replace(svg.textContent || '', '');
+    }
+
+    // Check if there's meaningful text left
+    return textContent.trim().length > 0;
+  });
+
+  // Skip only if there are no text elements (image-only link)
+  return textElements.length === 0;
+}
+
+/**
  * Add country flag next to username
  * @param {HTMLElement} linkElement - Profile link element
  * @param {string} username - Username (without @)
@@ -503,8 +531,8 @@ async function addCountryFlag(linkElement, username) {
     return;
   }
 
-  // Skip if link contains an image/svg (profile picture) or inside h1
-  if (linkElement.querySelector('img, svg') || linkElement.closest('h1')) {
+  // Skip if link contains only an image/svg (profile picture) or inside h1
+  if (shouldSkipImageLink(linkElement) || linkElement.closest('h1')) {
     return;
   }
 
