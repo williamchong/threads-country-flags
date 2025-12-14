@@ -5,6 +5,95 @@
  * Strategy: Intercept GraphQL responses to build username→userID mapping
  */
 
+// ===== Configuration Constants =====
+const MAX_USERNAME_CACHE_SIZE = 1000; // Maximum usernames to cache
+const MAX_COUNTRY_CACHE_SIZE = 500;   // Maximum countries to cache in memory
+
+/**
+ * LRU (Least Recently Used) Cache implementation
+ * Automatically evicts least recently used items when size limit is reached
+ */
+class LRUCache {
+  /**
+   * @param {number} maxSize - Maximum number of items to store
+   */
+  constructor(maxSize) {
+    this.maxSize = maxSize;
+    this.cache = new Map();
+  }
+
+  /**
+   * Get value from cache
+   * @param {string} key
+   * @returns {*} Value or undefined
+   */
+  get(key) {
+    if (!this.cache.has(key)) {
+      return undefined;
+    }
+
+    // Move to end (most recently used)
+    const value = this.cache.get(key);
+    this.cache.delete(key);
+    this.cache.set(key, value);
+    return value;
+  }
+
+  /**
+   * Set value in cache
+   * @param {string} key
+   * @param {*} value
+   */
+  set(key, value) {
+    // Remove if exists (to re-add at end)
+    if (this.cache.has(key)) {
+      this.cache.delete(key);
+    }
+
+    // Add to end (most recently used)
+    this.cache.set(key, value);
+
+    // Evict oldest if over size limit
+    if (this.cache.size > this.maxSize) {
+      const firstKey = this.cache.keys().next().value;
+      this.cache.delete(firstKey);
+    }
+  }
+
+  /**
+   * Check if key exists in cache
+   * @param {string} key
+   * @returns {boolean}
+   */
+  has(key) {
+    return this.cache.has(key);
+  }
+
+  /**
+   * Delete key from cache
+   * @param {string} key
+   * @returns {boolean} True if key existed
+   */
+  delete(key) {
+    return this.cache.delete(key);
+  }
+
+  /**
+   * Get current cache size
+   * @returns {number}
+   */
+  get size() {
+    return this.cache.size;
+  }
+
+  /**
+   * Clear all items from cache
+   */
+  clear() {
+    this.cache.clear();
+  }
+}
+
 /**
  * Multilingual country name to ISO 3166-1 alpha-2 code mappings
  * Supports English, Chinese (Simplified & Traditional), and common variations
@@ -295,10 +384,12 @@ function countryNameToFlag(countryName) {
 }
 
 // Track username to user ID mapping (built from GraphQL responses)
-const usernameToIdMap = new Map();
+// Using LRU cache to prevent unbounded memory growth
+const usernameToIdMap = new LRUCache(MAX_USERNAME_CACHE_SIZE);
 
 // Track user ID to country mapping (memory: {countryName, joinDate (ms timestamp), isNewUser})
-const countryCache = new Map();
+// Using LRU cache to prevent unbounded memory growth
+const countryCache = new LRUCache(MAX_COUNTRY_CACHE_SIZE);
 
 // Storage key prefix for persistent cache
 const STORAGE_PREFIX = 'country_';
