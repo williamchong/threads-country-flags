@@ -6,7 +6,7 @@ A Chrome extension that displays country flags next to usernames on Threads.com 
 ## Current Implementation Status
 **Status**: ✅ FULLY IMPLEMENTED AND WORKING
 
-**Version**: 1.0.0
+**Version**: 1.0.1
 
 ## Architecture
 

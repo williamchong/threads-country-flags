@@ -10,6 +10,8 @@ A Chrome extension that displays country flags next to usernames on Threads.com 
 
 - **Automatic Country Detection**: Fetches country information from user profiles via the Threads API
 - **Multilingual Support**: Recognizes country names in multiple languages (English, Chinese, Spanish, French, German, etc.)
+- **Pirate Flag for Hidden Location**: Shows 🏴‍☠️ when users explicitly hide their country
+- **New User Badge**: Displays 🔰 for accounts created within the last 60 days
 - **Smart Performance Optimization**: Only fetches data for links visible in viewport for >1 second using Intersection Observer
 - **Efficient Caching**: Persistent storage using chrome.storage.local for cross-session caching
 - **Flag Display**: Shows country flag emojis with country name tooltips on hover
@@ -58,7 +60,8 @@ If flags are not appearing:
 2. **Common Issues**:
    - **Not logged in to Threads**: The extension requires you to be logged in to access the API
    - **No GraphQL data yet**: Scroll through your feed to trigger bulk-route-definitions requests
-   - **Privacy settings**: Some users may have hidden their country in privacy settings
+   - **Pirate flag 🏴‍☠️**: This means the user has explicitly hidden their country in privacy settings
+   - **New user badge 🔰**: Shown for accounts created within the last 60 days
 
 3. **Debug Information**:
    The extension logs will show:
@@ -121,7 +124,10 @@ The extension uses the Threads "About This Profile" API endpoint:
 https://www.threads.com/async/wbloks/fetch/?appid=com.bloks.www.text_post_app.about_this_profile_async_action
 ```
 
-It extracts country information from the response and respects user privacy settings (only shows flags if the user has made their country public).
+It extracts country information from the response:
+- If `country_visibility === true`: Shows the country flag emoji
+- If `country_visibility === false`: Shows pirate flag 🏴‍☠️ (user explicitly hid their country)
+- If join date indicates new user (< 60 days): Shows 🔰 badge
 
 ## Development
 
