@@ -38,7 +38,13 @@
       );
 
       let countryName = null;
-      if (visibilityData?.data?.initial && countryData?.data?.initial) {
+      const visibility = visibilityData?.data?.initial;
+
+      if (visibility === false) {
+        // User explicitly hid their country - use special marker
+        countryName = '__COUNTRY_HIDDEN__';
+      } else if (visibility && countryData?.data?.initial) {
+        // Country is visible
         countryName = countryData.data.initial;
       }
 

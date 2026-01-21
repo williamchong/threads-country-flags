@@ -373,12 +373,20 @@ function getCountryCode(countryName) {
   return COUNTRY_MAPPINGS[normalized] || null;
 }
 
+// Special marker for hidden country (returned by API when user explicitly hides location)
+const COUNTRY_HIDDEN_MARKER = '__COUNTRY_HIDDEN__';
+const PIRATE_FLAG = '🏴‍☠️';
+
 /**
  * Convert country name to flag emoji
  * @param {string} countryName - Country name in any supported language
  * @returns {string} Flag emoji or empty string if not found
  */
 function countryNameToFlag(countryName) {
+  // Handle hidden country marker
+  if (countryName === COUNTRY_HIDDEN_MARKER) {
+    return PIRATE_FLAG;
+  }
   const code = getCountryCode(countryName);
   return code ? countryCodeToFlag(code) : '';
 }
@@ -772,8 +780,8 @@ async function addCountryFlag(linkElement, username) {
     }
   }
 
-  // If no country data, skip
-  if (!userInfo || !userInfo.countryName) {
+  // If no country data AND not a new user, skip
+  if (!userInfo || (!userInfo.countryName && !userInfo.isNewUser)) {
     return;
   }
 
@@ -797,20 +805,46 @@ async function addCountryFlag(linkElement, username) {
   }
 
   // Convert country name to flag emoji for display
-  const flagEmoji = countryNameToFlag(userInfo.countryName);
-  const displayFlag = flagEmoji || `{${userInfo.countryName}}`;
+  const flagEmoji = userInfo.countryName ? countryNameToFlag(userInfo.countryName) : '';
+  const isHidden = userInfo.countryName === COUNTRY_HIDDEN_MARKER;
+
+  // Build display flag (empty string if no country)
+  let displayFlag = '';
+  if (flagEmoji) {
+    displayFlag = flagEmoji;
+  } else if (userInfo.countryName && !isHidden) {
+    displayFlag = `{${userInfo.countryName}}`;
+  }
 
   // Add new user badge if applicable (from memory cache)
-  const newUserBadge = userInfo.isNewUser ? ' 🔰' : '';
+  const newUserBadge = userInfo.isNewUser ? '🔰' : '';
   const formattedDate = userInfo.joinDate ? formatJoinDate(userInfo.joinDate) : '';
-  const titleText = userInfo.isNewUser && formattedDate
-    ? `${userInfo.countryName} (New user: ${formattedDate})`
-    : userInfo.countryName;
+
+  // Build tooltip text
+  let titleText = '';
+  if (isHidden) {
+    titleText = 'Country hidden';
+  } else if (userInfo.countryName) {
+    titleText = userInfo.countryName;
+  }
+  if (userInfo.isNewUser && formattedDate) {
+    titleText = titleText ? `${titleText} (New user: ${formattedDate})` : `New user: ${formattedDate}`;
+  }
+
+  // Build display text (flag + badge with proper spacing)
+  const displayParts = [displayFlag, newUserBadge].filter(Boolean);
+  const displayText = displayParts.length > 0 ? ` ${displayParts.join(' ')}` : '';
+
+  // Skip if nothing to display
+  if (!displayText) {
+    linkElement.setAttribute('data-threads-flag-processed', 'true');
+    return;
+  }
 
   // Create flag element
   const flagSpan = document.createElement('span');
   flagSpan.className = 'threads-country-flag';
-  flagSpan.textContent = ` ${displayFlag}${newUserBadge}`;
+  flagSpan.textContent = displayText;
   flagSpan.title = titleText;
   flagSpan.style.cssText = 'white-space: nowrap; display: inline; margin-left: 4px;';
 
