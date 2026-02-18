@@ -8,6 +8,7 @@
 // ===== Configuration Constants =====
 const MAX_USERNAME_CACHE_SIZE = 1000; // Maximum usernames to cache
 const MAX_COUNTRY_CACHE_SIZE = 500;   // Maximum countries to cache in memory
+const NO_COUNTRY_TTL_MS = 24 * 60 * 60 * 1000; // 1 day TTL for "no country" cache entries
 
 /**
  * LRU (Least Recently Used) Cache implementation
@@ -568,6 +569,15 @@ async function getCountryFromStorage(userId) {
     }
 
     if (stored) {
+      // Expire "no country" entries after TTL
+      if (!stored.countryName && stored.cachedAt) {
+        const age = Date.now() - stored.cachedAt;
+        if (age > NO_COUNTRY_TTL_MS) {
+          await chrome.storage.local.remove(key);
+          return null;
+        }
+      }
+
       // Dynamically calculate isNewUser when loading from storage
       return {
         ...stored,
@@ -590,10 +600,10 @@ async function getCountryFromStorage(userId) {
 async function saveCountryToStorage(userId, userInfo) {
   try {
     const key = STORAGE_PREFIX + userId;
-    // Only save countryName and joinDate to persistent storage
     const dataToSave = {
       countryName: userInfo.countryName,
-      joinDate: userInfo.joinDate
+      joinDate: userInfo.joinDate,
+      ...(!userInfo.countryName ? { cachedAt: Date.now() } : {})
     };
     await chrome.storage.local.set({ [key]: dataToSave });
   } catch (error) {
@@ -752,8 +762,8 @@ async function addCountryFlag(linkElement, username) {
 
           countryCache.set(userId, info);
 
-          // Save to persistent storage if valid (not empty, not 'unknown', not error)
-          if (countryName && countryName.toLowerCase() !== 'unknown') {
+          // Save to persistent storage (including "no country" to avoid repeated API calls)
+          if (!countryName || countryName.toLowerCase() !== 'unknown') {
             await saveCountryToStorage(userId, info);
           }
 
