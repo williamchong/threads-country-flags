@@ -905,24 +905,56 @@ function observeNewLinks(observer) {
 }
 
 /**
- * Handle mutations (new content added to page) - lighter version
- * Just sets up observers for new links
+ * Check if an element is a profile link matching our criteria
+ * @param {HTMLElement} element
+ * @returns {boolean}
+ */
+function isProfileLink(element) {
+  if (element.tagName !== 'A') return false;
+  if (element.getAttribute('role') !== 'link') return false;
+  const href = element.getAttribute('href');
+  return href && /\/@[a-zA-Z0-9_.]+$/.test(href);
+}
+
+/**
+ * Observe profile links found within a DOM node
+ * @param {HTMLElement} root - Root element to search within
+ * @param {IntersectionObserver} observer
+ */
+function observeLinksInNode(root, observer) {
+  // Check if the node itself is a profile link
+  if (isProfileLink(root)) {
+    if (!observedLinks.has(root)) {
+      observer.observe(root);
+      observedLinks.add(root);
+    }
+  }
+
+  // Search within the node for profile links
+  if (root.querySelectorAll) {
+    const links = root.querySelectorAll('a[href*="/@"][role="link"]');
+    for (const link of links) {
+      if (isProfileLink(link) && !observedLinks.has(link)) {
+        observer.observe(link);
+        observedLinks.add(link);
+      }
+    }
+  }
+}
+
+/**
+ * Handle mutations (new content added to page)
+ * Only searches within added nodes instead of re-querying the entire DOM
  * @param {MutationRecord[]} mutations
  * @param {IntersectionObserver} observer
  */
 function handleMutations(mutations, observer) {
-  // Check if any new profile links were added
-  let hasNewLinks = false;
-
   for (const mutation of mutations) {
-    if (mutation.addedNodes.length > 0) {
-      hasNewLinks = true;
-      break;
+    for (const node of mutation.addedNodes) {
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        observeLinksInNode(node, observer);
+      }
     }
-  }
-
-  if (hasNewLinks) {
-    observeNewLinks(observer);
   }
 }
 
@@ -946,8 +978,19 @@ function init() {
   }, 2000);
 
   // Set up mutation observer for dynamic content (just to find new links to observe)
+  // Debounce via requestAnimationFrame to batch rapid DOM changes
+  let pendingMutations = [];
+  let mutationRafId = null;
+
   const mutationObserver = new MutationObserver((mutations) => {
-    handleMutations(mutations, intersectionObserver);
+    pendingMutations.push(...mutations);
+    if (!mutationRafId) {
+      mutationRafId = requestAnimationFrame(() => {
+        handleMutations(pendingMutations, intersectionObserver);
+        pendingMutations = [];
+        mutationRafId = null;
+      });
+    }
   });
 
   mutationObserver.observe(document.body, {
