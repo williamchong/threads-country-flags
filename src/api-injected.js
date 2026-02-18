@@ -62,6 +62,31 @@
   }
 
   /**
+   * Recursively walk an object and collect all string values found at "text" keys
+   * @param {*} obj - Object to walk
+   * @returns {string[]} Array of string values from "text" properties
+   */
+  function findTextValues(obj) {
+    const results = [];
+    if (obj == null || typeof obj !== 'object') return results;
+
+    if (Array.isArray(obj)) {
+      for (const item of obj) {
+        results.push(...findTextValues(item));
+      }
+    } else {
+      for (const key of Object.keys(obj)) {
+        if (key === 'text' && typeof obj[key] === 'string') {
+          results.push(obj[key]);
+        } else {
+          results.push(...findTextValues(obj[key]));
+        }
+      }
+    }
+    return results;
+  }
+
+  /**
    * Extract join date timestamp from API response
    * NOTE: Returns timestamp for first day of the month (day precision not available)
    * @param {Object} response - Parsed API response
@@ -69,17 +94,19 @@
    */
   function extractJoinDate(response) {
     try {
-      // Convert response to JSON string and search for date pattern
-      // This is much simpler than recursive object traversal
-      const responseStr = JSON.stringify(response);
+      // Walk the response object to find all "text" property values,
+      // then match against the date pattern
+      const textValues = findTextValues(response);
+      const datePattern = /\b20\d{2}\b/;
+      const separatorPattern = /[·•]/;
 
-      // Pattern: "text":"<date with year 20XX and separator · or •>"
-      // Matches: "December 2025 · 100M+", "2025年12月 · 1 億+", "July 2023 · #14,233,984"
-      // Use lookahead/lookbehind to extract just the text value
-      const textPattern = /"text":"([^"]*\b20\d{2}\b[^"]*?[·•][^"]*)"/;
-      const match = responseStr.match(textPattern);
-
-      const dateText = match ? match[1] : null;
+      let dateText = null;
+      for (const value of textValues) {
+        if (datePattern.test(value) && separatorPattern.test(value)) {
+          dateText = value;
+          break;
+        }
+      }
       if (!dateText) return null;
 
       // Parse year and month from text
