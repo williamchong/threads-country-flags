@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.0.2 (2026-02-19)
+
+**Bug Fixes:**
+- Fixed nullish coalescing (`||` → `??`) for `joinDate` and `countryName` to correctly handle falsy-but-valid values
+
+**Performance:**
+- Scoped MutationObserver to only search within newly added DOM nodes instead of re-querying the entire DOM
+- Added `requestAnimationFrame` debouncing to batch rapid DOM mutations
+- Cache "no country" API results with 1-day TTL to avoid repeated API calls for users without public country data
+
 ## v1.0.1 (2026-01-22)
 
 **New Features:**
