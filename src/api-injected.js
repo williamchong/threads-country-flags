@@ -249,7 +249,7 @@
       detail: {
         userId,
         countryName: userInfo?.countryName || null,
-        joinDate: userInfo?.joinDate || null,
+        joinDate: userInfo?.joinDate ?? null,
         requestId
       }
     }));

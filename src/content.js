@@ -741,8 +741,8 @@ async function addCountryFlag(linkElement, username) {
           ]);
 
           // Build user info object
-          const countryName = apiResponse?.countryName || '';
-          const joinDate = apiResponse?.joinDate || null;
+          const countryName = apiResponse?.countryName ?? '';
+          const joinDate = apiResponse?.joinDate ?? null;
 
           const info = {
             countryName,
