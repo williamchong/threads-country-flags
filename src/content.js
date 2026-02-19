@@ -750,6 +750,9 @@ async function addCountryFlag(linkElement, username) {
             new Promise(resolve => setTimeout(() => resolve(null), 10000)) // 10s timeout
           ]);
 
+          // Clean up pending request entry regardless of which promise won
+          pendingCountryRequests.delete(requestIdForThis);
+
           // Build user info object
           const countryName = apiResponse?.countryName ?? '';
           const joinDate = apiResponse?.joinDate ?? null;
@@ -763,9 +766,7 @@ async function addCountryFlag(linkElement, username) {
           countryCache.set(userId, info);
 
           // Save to persistent storage (including "no country" to avoid repeated API calls)
-          if (!countryName || countryName.toLowerCase() !== 'unknown') {
-            await saveCountryToStorage(userId, info);
-          }
+          await saveCountryToStorage(userId, info);
 
           return info;
         } catch (error) {
