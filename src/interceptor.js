@@ -5,7 +5,6 @@
 
 (function () {
   console.log('[Threads Country Flags] Interceptor script starting...');
-  let sessionParamsCaptured = false;
   let cachedVersioningID = null;
 
   /**
@@ -101,13 +100,12 @@
     if (typeof url === 'string' && url.includes('/bulk-route-definitions')) {
       const requestBody = args[0];
 
-      if (!sessionParamsCaptured && requestBody) {
+      if (requestBody) {
         const sessionParams = extractSessionParams(requestBody);
         if (sessionParams && sessionParams.fb_dtsg) {
           window.dispatchEvent(new CustomEvent('threadsSessionParams', {
             detail: sessionParams
           }));
-          sessionParamsCaptured = true;
         }
       }
 

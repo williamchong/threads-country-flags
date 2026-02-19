@@ -15,9 +15,9 @@ async function getStorageStats() {
     const allItems = await chrome.storage.local.get(null);
     const countryKeys = Object.keys(allItems).filter(key => key.startsWith(STORAGE_PREFIX));
 
-    // Calculate approximate storage size
-    const storageString = JSON.stringify(allItems);
-    const storageBytes = new Blob([storageString]).size;
+    // Calculate storage size for country entries only
+    const countryItems = Object.fromEntries(countryKeys.map(k => [k, allItems[k]]));
+    const storageBytes = new Blob([JSON.stringify(countryItems)]).size;
 
     return {
       storageSize: countryKeys.length,
@@ -78,9 +78,3 @@ document.getElementById('clearCache').addEventListener('click', async () => {
 // Initialize
 updateStats();
 
-// Update stats when popup opens
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) {
-    updateStats();
-  }
-});
