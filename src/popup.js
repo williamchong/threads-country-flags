@@ -44,6 +44,7 @@ async function updateStats() {
 document.getElementById('clearCache').addEventListener('click', async () => {
   const button = document.getElementById('clearCache');
   const successMessage = document.getElementById('successMessage');
+  const errorMessage = document.getElementById('errorMessage');
 
   button.disabled = true;
   button.textContent = 'Clearing...';
@@ -71,7 +72,10 @@ document.getElementById('clearCache').addEventListener('click', async () => {
     console.error('Error clearing cache:', error);
     button.disabled = false;
     button.textContent = 'Clear Cache';
-    alert('Failed to clear cache');
+    errorMessage.style.display = 'block';
+    setTimeout(() => {
+      errorMessage.style.display = 'none';
+    }, 2000);
   }
 });
 
