@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.0.3 (2026-02-26)
+
+**Bug Fixes:**
+- Fixed memory leak where `pendingCountryRequests` retained resolver callbacks indefinitely when the 10s API timeout fired before a response arrived
+- Fixed session parameters becoming stale after token rotation — removed the one-time capture flag so `fb_dtsg` and friends are refreshed on every intercepted request
+- Replaced blocking `alert()` on cache clear failure with an inline error message, consistent with the success message pattern
+
+**Improvements:**
+- Expanded country mappings from ~50 to ~150 countries, adding full coverage for Middle East, Africa, Eastern Europe, Central Asia, Latin America, and small European states — each with English, native name, and Chinese (Simplified + Traditional) variants
+- Fixed popup storage bytes stat to measure only country cache entries, consistent with the cached countries count shown alongside it
+
+**Cleanup:**
+- Removed dead `'unknown'` guard in cache-save logic (API never returns that string)
+- Removed unreachable `visibilitychange` listener in popup (popups don't persist in background)
+- Removed redundant `web_accessible_resources` entry for CSS (already injected via `content_scripts`)
+- Removed redundant `isProfileLink()` check inside `observeLinksInNode` (selector already enforces the same conditions)
+
 ## v1.0.2 (2026-02-19)
 
 **Bug Fixes:**
