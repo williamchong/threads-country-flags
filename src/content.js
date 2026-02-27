@@ -1406,7 +1406,7 @@ function observeLinksInNode(root, observer) {
   if (root.querySelectorAll) {
     const links = root.querySelectorAll('a[href*="/@"][role="link"]');
     for (const link of links) {
-      if (!observedLinks.has(link)) {
+      if (!observedLinks.has(link) && isProfileLink(link)) {
         observer.observe(link);
         observedLinks.add(link);
       }
