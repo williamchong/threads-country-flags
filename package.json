@@ -1,0 +1,19 @@
+{
+  "name": "threads-country-flags",
+  "version": "1.0.4",
+  "private": true,
+  "description": "A Chrome extension that displays country flags next to usernames on Threads.com by leveraging the official Threads API.",
+  "scripts": {
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "package": "zip -r threads-country-flags.zip manifest.json src/ icons/ -x '*.DS_Store'"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.0.2",
+    "globals": "^17.3.0"
+  }
+}

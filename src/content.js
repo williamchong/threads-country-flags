@@ -516,8 +516,8 @@ const COUNTRY_MAPPINGS = {
 
   // Ivory Coast
   'ivory coast': 'CI',
-  "cote d'ivoire": 'CI',
-  "côte d'ivoire": 'CI',
+  'cote d\'ivoire': 'CI',
+  'côte d\'ivoire': 'CI',
   '科特迪瓦': 'CI',
 
   // Angola
@@ -892,7 +892,7 @@ function formatJoinDate(joinDateMs) {
       year: 'numeric',
       month: 'long'
     });
-  } catch (error) {
+  } catch {
     return '';
   }
 }
@@ -936,7 +936,7 @@ window.addEventListener('threadsSessionParams', (event) => {
  * Listen for country responses from injected API
  */
 window.addEventListener('threadsCountryResponse', (event) => {
-  const { userId, countryName, joinDate, requestId } = event.detail;
+  const { countryName, joinDate, requestId } = event.detail;
 
   // Resolve pending promise with full user info
   const resolve = pendingCountryRequests.get(requestId);
@@ -965,7 +965,6 @@ function extractUserDataFromBulkRoute(data) {
       }
     }
 
-    let usersFound = 0;
     const payload = response?.payload?.payloads || {};
 
     // Match each route URL with its response data
@@ -989,7 +988,6 @@ function extractUserDataFromBulkRoute(data) {
 
       if (userId) {
         usernameToIdMap.set(username, userId);
-        usersFound++;
       }
     }
 

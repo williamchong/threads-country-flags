@@ -10,9 +10,13 @@ Chrome extension (Manifest V3) that displays country flags next to usernames on 
 
 ## Development
 
-No package.json, bundler, or build process. To test changes, load the extension in Chrome via `chrome://extensions` → "Load unpacked" → select this repo's root directory. Reload the extension after code changes.
+No bundler or build process. To test changes, load the extension in Chrome via `chrome://extensions` → "Load unpacked" → select this repo's root directory. Reload the extension after code changes.
 
-There are no automated tests or linting configured.
+```bash
+npm run lint       # Run ESLint on src/
+npm run lint:fix   # Auto-fix fixable lint issues
+npm run package    # Create threads-country-flags.zip for Chrome Web Store
+```
 
 ## Architecture
 
