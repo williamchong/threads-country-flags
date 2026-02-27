@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.4 (2026-02-28)
+
+**Bug Fixes:**
+- Fixed duplicate flags appearing in posts — `observeLinksInNode` was observing post/timestamp links (`/@user/post/ID`) in addition to profile links, causing up to 3 flags per post instead of 1
+
 ## v1.0.3 (2026-02-26)
 
 **Bug Fixes:**
