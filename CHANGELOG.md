@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.1.0 (2026-03-03)
+
+**New Features:**
+- Added internationalization (i18n) support using Chrome's `chrome.i18n` API — extension name, description, and popup UI are now fully localized
+- Added Traditional Chinese (`zh_TW`) locale
+- Optimized Chrome Web Store description for better discoverability
+
+**Improvements:**
+- Popup sets `<html lang>` dynamically from user's browser language for accessibility
+- English fallback text in popup HTML prevents empty flash before JS loads
+- Consolidated button reset logic using `finally` block
+
 ## v1.0.4 (2026-02-28)
 
 **Bug Fixes:**
