@@ -4,6 +4,12 @@
 
 const STORAGE_PREFIX = 'country_';
 
+// Apply i18n to all elements with data-i18n attribute
+document.documentElement.lang = chrome.i18n.getUILanguage();
+document.querySelectorAll('[data-i18n]').forEach(el => {
+  el.textContent = chrome.i18n.getMessage(el.dataset.i18n);
+});
+
 function formatBytes(bytes) {
   if (bytes < 1024) return bytes + ' B';
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
@@ -47,35 +53,20 @@ document.getElementById('clearCache').addEventListener('click', async () => {
   const errorMessage = document.getElementById('errorMessage');
 
   button.disabled = true;
-  button.textContent = 'Clearing...';
+  button.textContent = chrome.i18n.getMessage('buttonClearing');
 
   try {
-    // Clear background cache
     await chrome.runtime.sendMessage({ type: 'CLEAR_CACHE' });
-
-    // Show success message
-    successMessage.textContent = 'Cache cleared successfully!';
     successMessage.style.display = 'block';
-
-    // Update stats
     await updateStats();
-
-    // Reset button
-    button.disabled = false;
-    button.textContent = 'Clear Cache';
-
-    // Hide success message after 2 seconds
-    setTimeout(() => {
-      successMessage.style.display = 'none';
-    }, 2000);
+    setTimeout(() => { successMessage.style.display = 'none'; }, 2000);
   } catch (error) {
     console.error('Error clearing cache:', error);
-    button.disabled = false;
-    button.textContent = 'Clear Cache';
     errorMessage.style.display = 'block';
-    setTimeout(() => {
-      errorMessage.style.display = 'none';
-    }, 2000);
+    setTimeout(() => { errorMessage.style.display = 'none'; }, 2000);
+  } finally {
+    button.disabled = false;
+    button.textContent = chrome.i18n.getMessage('buttonClearCache');
   }
 });
 

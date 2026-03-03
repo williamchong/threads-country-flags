@@ -1,0 +1,42 @@
+{
+  "extName": {
+    "message": "Threads Country Flags",
+    "description": "Extension name shown in Chrome Web Store and browser toolbar"
+  },
+  "extDescription": {
+    "message": "See where Threads users are from — country location flags next to every username",
+    "description": "Extension description shown in Chrome Web Store"
+  },
+  "popupTitle": {
+    "message": "Threads Country Flags",
+    "description": "Heading in the popup"
+  },
+  "sectionStatistics": {
+    "message": "Statistics",
+    "description": "Section heading for cache statistics"
+  },
+  "labelCachedCountries": {
+    "message": "Cached Countries",
+    "description": "Label for cached country count"
+  },
+  "labelStorageUsed": {
+    "message": "Storage Used",
+    "description": "Label for storage usage"
+  },
+  "buttonClearCache": {
+    "message": "Clear Cache",
+    "description": "Button to clear cached data"
+  },
+  "buttonClearing": {
+    "message": "Clearing...",
+    "description": "Button text while clearing cache"
+  },
+  "msgCacheCleared": {
+    "message": "Cache cleared successfully!",
+    "description": "Success message after clearing cache"
+  },
+  "msgCacheClearFailed": {
+    "message": "Failed to clear cache.",
+    "description": "Error message when clearing cache fails"
+  }
+}

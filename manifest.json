@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "Threads Country Flags",
+  "name": "__MSG_extName__",
   "version": "1.0.4",
-  "description": "Display country flags next to usernames on Threads.com",
+  "description": "__MSG_extDescription__",
+  "default_locale": "en",
   "permissions": [
     "storage"
   ],

@@ -1,0 +1,42 @@
+{
+  "extName": {
+    "message": "Threads 國旗顯示器",
+    "description": "Extension name shown in Chrome Web Store and browser toolbar"
+  },
+  "extDescription": {
+    "message": "一眼看出 Threads 用戶來自哪個國家 — 在每個用戶名旁顯示國旗",
+    "description": "Extension description shown in Chrome Web Store"
+  },
+  "popupTitle": {
+    "message": "Threads 國旗顯示器",
+    "description": "Heading in the popup"
+  },
+  "sectionStatistics": {
+    "message": "統計資料",
+    "description": "Section heading for cache statistics"
+  },
+  "labelCachedCountries": {
+    "message": "已快取國家數",
+    "description": "Label for cached country count"
+  },
+  "labelStorageUsed": {
+    "message": "儲存空間使用量",
+    "description": "Label for storage usage"
+  },
+  "buttonClearCache": {
+    "message": "清除快取",
+    "description": "Button to clear cached data"
+  },
+  "buttonClearing": {
+    "message": "清除中⋯",
+    "description": "Button text while clearing cache"
+  },
+  "msgCacheCleared": {
+    "message": "快取已成功清除！",
+    "description": "Success message after clearing cache"
+  },
+  "msgCacheClearFailed": {
+    "message": "清除快取失敗。",
+    "description": "Error message when clearing cache fails"
+  }
+}
