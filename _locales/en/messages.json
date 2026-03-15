@@ -4,7 +4,7 @@
     "description": "Extension name shown in Chrome Web Store and browser toolbar"
   },
   "extDescription": {
-    "message": "See where Threads users are from — country location flags next to every username",
+    "message": "See where Threads users are from — country flags next to every username",
     "description": "Extension description shown in Chrome Web Store"
   },
   "popupTitle": {
