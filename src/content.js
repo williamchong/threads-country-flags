@@ -1432,9 +1432,6 @@ function handleMutations(mutations, observer) {
  * Initialize the extension
  */
 function init() {
-  console.log('[Threads Country Flags] Content script initialized (ISOLATED world)');
-  console.log('[Threads Country Flags] Listening for GraphQL data from interceptor (MAIN world)');
-
   // Set up intersection observer to track elements in viewport
   const intersectionObserver = new IntersectionObserver(handleIntersection, {
     root: null, // viewport
@@ -1468,7 +1465,6 @@ function init() {
     subtree: true
   });
 
-  console.log('[Threads Country Flags] ✅ Intersection observer initialized');
 }
 
 // Wait for page to be ready

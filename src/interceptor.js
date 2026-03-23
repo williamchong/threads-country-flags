@@ -4,7 +4,6 @@
  */
 
 (function () {
-  console.log('[Threads Country Flags] Interceptor script starting...');
   let cachedVersioningID = null;
 
   /**
@@ -27,7 +26,6 @@
           const match = content.match(/"versioningID":"([a-f0-9]+)"/);
           if (match) {
             cachedVersioningID = match[1];
-            console.log('[Threads Country Flags] Cached versioningID:', cachedVersioningID);
             return cachedVersioningID;
           }
         }
@@ -143,6 +141,4 @@
     return originalSend.apply(this, args);
   };
 
-  console.log('[Threads Country Flags] ✅ XMLHttpRequest interceptor installed');
-  console.log('[Threads Country Flags] 🚀 All interceptors ready in MAIN world');
 })();

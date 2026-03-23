@@ -70,6 +70,9 @@ document.getElementById('clearCache').addEventListener('click', async () => {
   }
 });
 
+const manifest = chrome.runtime.getManifest();
+document.getElementById('versionText').textContent = `Version ${manifest.version}`;
+
 // Initialize
 updateStats();
 

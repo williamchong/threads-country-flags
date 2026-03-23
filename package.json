@@ -6,7 +6,7 @@
   "scripts": {
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
-    "package": "zip -r threads-country-flags.zip manifest.json src/ icons/ _locales/ -x '*.DS_Store'"
+    "package": "zip -r threads-country-flags.zip manifest.json src/ icons/ _locales/ PRIVACY.md -x '*.DS_Store'"
   },
   "keywords": [],
   "author": "",

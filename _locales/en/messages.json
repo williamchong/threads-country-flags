@@ -38,5 +38,13 @@
   "msgCacheClearFailed": {
     "message": "Failed to clear cache.",
     "description": "Error message when clearing cache fails"
+  },
+  "linkGitHub": {
+    "message": "GitHub",
+    "description": "Link to GitHub repository in popup footer"
+  },
+  "linkSupport": {
+    "message": "Support",
+    "description": "Link to support/issues page in popup footer"
   }
 }

@@ -128,6 +128,14 @@
     .footer a:hover {
       text-decoration: underline;
     }
+
+    .footer-links {
+      margin-top: 6px;
+    }
+
+    .footer-links a {
+      margin: 0 6px;
+    }
   </style>
 </head>
 <body>
@@ -152,7 +160,11 @@
   </div>
 
   <div class="footer">
-    <div>Version 1.1.0</div>
+    <div id="versionText">Version 1.1.0</div>
+    <div class="footer-links">
+      <a href="https://github.com/williamchong/threads-country-flags" target="_blank" data-i18n="linkGitHub">GitHub</a>
+      <a href="https://github.com/williamchong/threads-country-flags/issues" target="_blank" data-i18n="linkSupport">Support</a>
+    </div>
   </div>
 
   <script src="popup.js"></script>
