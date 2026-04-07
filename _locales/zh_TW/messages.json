@@ -46,5 +46,19 @@
   "linkSupport": {
     "message": "支援",
     "description": "Link to support/issues page in popup footer"
+  },
+  "tooltipCountryHidden": {
+    "message": "國家已隱藏",
+    "description": "Tooltip shown when user has hidden their country"
+  },
+  "tooltipNewUser": {
+    "message": "新用戶：$DATE$",
+    "description": "Tooltip for new user badge with join date",
+    "placeholders": {
+      "DATE": {
+        "content": "$1",
+        "example": "2025年2月"
+      }
+    }
   }
 }

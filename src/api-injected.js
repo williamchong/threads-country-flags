@@ -62,28 +62,31 @@
   }
 
   /**
-   * Recursively walk an object and collect all string values found at "text" keys
+   * Recursively walk an object and return the first "text" string matching a predicate.
+   * Stops walking as soon as a match is found.
    * @param {*} obj - Object to walk
-   * @returns {string[]} Array of string values from "text" properties
+   * @param {function(string): boolean} predicate - Test function for text values
+   * @returns {string|null} First matching text value, or null
    */
-  function findTextValues(obj) {
-    const results = [];
-    if (obj == null || typeof obj !== 'object') return results;
+  function findFirstMatchingText(obj, predicate) {
+    if (obj == null || typeof obj !== 'object') return null;
 
     if (Array.isArray(obj)) {
       for (const item of obj) {
-        results.push(...findTextValues(item));
+        const result = findFirstMatchingText(item, predicate);
+        if (result !== null) return result;
       }
     } else {
       for (const key of Object.keys(obj)) {
         if (key === 'text' && typeof obj[key] === 'string') {
-          results.push(obj[key]);
+          if (predicate(obj[key])) return obj[key];
         } else {
-          results.push(...findTextValues(obj[key]));
+          const result = findFirstMatchingText(obj[key], predicate);
+          if (result !== null) return result;
         }
       }
     }
-    return results;
+    return null;
   }
 
   /**
@@ -94,19 +97,13 @@
    */
   function extractJoinDate(response) {
     try {
-      // Walk the response object to find all "text" property values,
-      // then match against the date pattern
-      const textValues = findTextValues(response);
       const datePattern = /\b20\d{2}\b/;
       const separatorPattern = /[·•]/;
 
-      let dateText = null;
-      for (const value of textValues) {
-        if (datePattern.test(value) && separatorPattern.test(value)) {
-          dateText = value;
-          break;
-        }
-      }
+      // Walk the response and stop at the first text matching the date pattern
+      const dateText = findFirstMatchingText(response, value =>
+        datePattern.test(value) && separatorPattern.test(value)
+      );
       if (!dateText) return null;
 
       // Parse year and month from text

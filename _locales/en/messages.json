@@ -46,5 +46,19 @@
   "linkSupport": {
     "message": "Support",
     "description": "Link to support/issues page in popup footer"
+  },
+  "tooltipCountryHidden": {
+    "message": "Country hidden",
+    "description": "Tooltip shown when user has hidden their country"
+  },
+  "tooltipNewUser": {
+    "message": "New user: $DATE$",
+    "description": "Tooltip for new user badge with join date",
+    "placeholders": {
+      "DATE": {
+        "content": "$1",
+        "example": "February 2025"
+      }
+    }
   }
 }

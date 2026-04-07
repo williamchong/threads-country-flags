@@ -107,9 +107,9 @@
         }
       }
 
-      const originalOnReadyStateChange = this.onreadystatechange;
-
-      this.onreadystatechange = function () {
+      // Use addEventListener (additive) instead of replacing onreadystatechange
+      // so the page's own handler is never dropped, even if set after send()
+      this.addEventListener('readystatechange', function () {
         if (this.readyState === 4 && this.status === 200) {
           try {
             // Remove "for (;;);" prefix if exists (Facebook's CSRF protection)
@@ -127,15 +127,11 @@
                 response: response
               }
             }));
-          } catch (error) {
-            console.error('[Threads Country Flags] ❌ Error parsing bulk-route-definitions:', error);
+          } catch {
+            // Silently ignore parse errors for non-JSON responses
           }
         }
-
-        if (originalOnReadyStateChange) {
-          return originalOnReadyStateChange.apply(this, arguments);
-        }
-      };
+      });
     }
 
     return originalSend.apply(this, args);

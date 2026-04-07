@@ -9,6 +9,7 @@
 const MAX_USERNAME_CACHE_SIZE = 1000; // Maximum usernames to cache
 const MAX_COUNTRY_CACHE_SIZE = 500;   // Maximum countries to cache in memory
 const NO_COUNTRY_TTL_MS = 24 * 60 * 60 * 1000; // 1 day TTL for "no country" cache entries
+const UI_LANGUAGE = chrome.i18n.getUILanguage();
 
 /**
  * LRU (Least Recently Used) Cache implementation
@@ -888,7 +889,7 @@ function formatJoinDate(joinDateMs) {
   if (!joinDateMs || typeof joinDateMs !== 'number') return '';
 
   try {
-    return new Date(joinDateMs).toLocaleDateString('en-US', {
+    return new Date(joinDateMs).toLocaleDateString(UI_LANGUAGE, {
       year: 'numeric',
       month: 'long'
     });
@@ -1293,12 +1294,13 @@ async function addCountryFlag(linkElement, username) {
   // Build tooltip text
   let titleText = '';
   if (isHidden) {
-    titleText = 'Country hidden';
+    titleText = chrome.i18n.getMessage('tooltipCountryHidden');
   } else if (userInfo.countryName) {
     titleText = userInfo.countryName;
   }
   if (userInfo.isNewUser && formattedDate) {
-    titleText = titleText ? `${titleText} (New user: ${formattedDate})` : `New user: ${formattedDate}`;
+    const newUserLabel = chrome.i18n.getMessage('tooltipNewUser', [formattedDate]);
+    titleText = titleText ? `${titleText} (${newUserLabel})` : newUserLabel;
   }
 
   // Build display text (flag + badge with proper spacing)
