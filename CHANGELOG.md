@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.1.1 (2026-04-08)
+
+**New Features:**
+- Added privacy policy page (`PRIVACY.md`) and linked it from the popup footer alongside GitHub and Support links
+
+**Improvements:**
+- Fixed XHR interception to use `addEventListener` instead of replacing `onreadystatechange`, preventing dropped handlers when Threads sets them after `send()`
+- Completed i18n coverage: tooltip strings ("Country hidden", "New user") now use `chrome.i18n.getMessage()` with translations for both English and Traditional Chinese
+- Date formatting now respects the browser's UI language instead of hardcoding `en-US`
+- Optimized API response parsing with early-exit recursive walk, reducing main-thread work per country lookup
+- Removed redundant "location" wording from English short description
+- Cleaned up console output by removing debug logging from production code
+
 ## v1.1.0 (2026-03-03)
 
 **New Features:**
