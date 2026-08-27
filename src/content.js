@@ -600,7 +600,6 @@ async function addCountryFlag(linkElement, username) {
   flagSpan.className = 'threads-country-flag';
   flagSpan.textContent = displayText;
   flagSpan.title = titleText;
-  flagSpan.style.cssText = 'white-space: nowrap; display: inline; margin-left: 4px;';
 
   // Insert flag right after the display name text (inside the span)
   insertionPoint.appendChild(flagSpan);

@@ -5,6 +5,7 @@
 .threads-country-flag {
   display: inline-block;
   margin-left: 4px;
+  white-space: nowrap;
   font-size: 14px;
   line-height: 1;
   vertical-align: middle;
