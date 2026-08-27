@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Chrome extension (Manifest V3) that displays country flags next to usernames on Threads.com. No build step, no dependencies — vanilla JS loaded directly by Chrome.
 
-**Version**: 1.1.1
+**Version**: 1.1.2
 
 ## Development
 
@@ -25,7 +25,7 @@ npm run package    # Create threads-country-flags.zip for Chrome Web Store
 The extension runs scripts in two Chrome extension "worlds" that communicate via `CustomEvent` dispatches on `window`:
 
 - **MAIN world** (`src/interceptor.js`, `src/api-injected.js`): Runs in the page's JS context. Required because Threads doesn't expose user IDs in the DOM, and the country API needs the page's session cookies.
-- **ISOLATED world** (`src/content.js`): Safe DOM manipulation. Observes profile links, manages caching, injects flag elements.
+- **ISOLATED world** (`src/country-mappings.js`, `src/content.js`): Safe DOM manipulation. Observes profile links, manages caching, injects flag elements. `country-mappings.js` is loaded first and exposes `COUNTRY_MAPPINGS` as a shared global.
 
 ### Data Flow
 
@@ -48,7 +48,7 @@ content.js (ISOLATED) → receives country data → converts to flag emoji → i
 
 ### Profile Link Filtering
 
-Only links matching `a[href*="/@"][role="link"]` where href **ends** with `/@username` (no `/post/...` suffix) are processed. This is enforced by `isProfileLink()` — both `findProfileLinks()` and `observeLinksInNode()` must use this check to prevent flags on timestamp/post-content links.
+Only links matching `a[href*="/@"][role="link"]` where href **ends** with `/@username` (no `/post/...` suffix) are processed. This is enforced by `isProfileLink()` (using `PROFILE_HREF_RE`), the single predicate used by `observeLinksInNode()` for both the initial scan and mutation-added nodes, to prevent flags on timestamp/post-content links.
 
 Additional filters: `shouldSkipImageLink()` skips image-only links (profile pictures), `closest('h1')` skips page headers.
 
@@ -57,11 +57,12 @@ Additional filters: `shouldSkipImageLink()` skips image-only links (profile pict
 - **In-memory**: LRU caches with size limits (`MAX_USERNAME_CACHE_SIZE=1000`, `MAX_COUNTRY_CACHE_SIZE=500`)
 - **Persistent**: `chrome.storage.local` with `country_` prefix. Stores `{countryName, joinDate, cachedAt}`
 - **No-country TTL**: "No country" results cached with `cachedAt` timestamp, expire after 1 day (`NO_COUNTRY_TTL_MS`) to allow retries
+- **Failures are not persisted**: the API response carries `ok`; timeouts, HTTP errors and missing session params are kept in the in-memory cache only (so a page reload retries) and never written to `chrome.storage.local`
 - **Country data**: Never expires (rarely changes)
 
 ### Country Resolution
 
-API responses are locale-sensitive (e.g., "香港", "Hong Kong", "Estados Unidos"). `COUNTRY_MAPPINGS` in content.js maps ~150 countries in multiple languages to ISO 3166-1 alpha-2 codes, then converts to Unicode flag emojis via regional indicator symbols (char code + 127397).
+API responses are locale-sensitive (e.g., "香港", "Hong Kong", "Estados Unidos"). `COUNTRY_MAPPINGS` in `src/country-mappings.js` maps ~150 countries in multiple languages to ISO 3166-1 alpha-2 codes, then converts to Unicode flag emojis via regional indicator symbols (char code + 127397).
 
 Special cases:
 - Hidden country (user opted out): returns `__COUNTRY_HIDDEN__` → displays 🏴‍☠️
@@ -79,6 +80,6 @@ Special cases:
 **Response keys in `payload.layout.bloks_payload.data[]`**:
 - `THREADS_ABOUT_THIS_PROFILE:about_this_profile_country` — country name
 - `THREADS_ABOUT_THIS_PROFILE:about_this_profile_country_visibility` — whether country is public
-- `THREADS_ABOUT_THIS_PROFILE:about_this_profile_date_joined` — join date string
+- Join date: not read from a keyed entry. `extractJoinDate()` walks the payload for the first `text` value containing a `20xx` year and a `·`/`•` separator (e.g. "December 2025 · 12 posts") and parses month/year from it
 
 Session parameters (`fb_dtsg`, `lsd`, `jazoest`, `__bkv`) are refreshed on every intercepted XHR request to handle token rotation.

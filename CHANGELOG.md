@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.1.2 (2026-08-28)
+
+**Bug Fixes:**
+- Failed country lookups (timeouts, HTTP errors, missing session tokens) are no longer written to persistent storage as "no country", which previously hid flags for up to 24 hours after a transient error
+
+**Improvements:**
+- Removed the background service worker — the popup now clears the cache directly via `chrome.storage`
+- Moved the multilingual country lookup table into `src/country-mappings.js`, halving `content.js`
+- Single `isProfileLink()` predicate for both initial scan and mutation-added links (removed duplicate `findProfileLinks()`)
+- Session parameters are captured from one key list in `interceptor.js` and replayed generically by `api-injected.js`
+- `versioningID` lookup no longer rescans page scripts on every request when the ID is absent
+- Hoisted timing/threshold magic numbers into named constants
+- ESLint `no-unused-vars` promoted to error
+- Flag styling now comes solely from `styles.css` (inline-block, fade-in); removed the conflicting inline style
+
 ## v1.1.1 (2026-04-08)
 
 **New Features:**
