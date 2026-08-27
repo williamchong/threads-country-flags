@@ -4,17 +4,35 @@
  */
 
 (function () {
+  // Session parameters forwarded verbatim from the page's own requests.
+  // api-injected.js replays whatever keys it receives, so this is the single
+  // place that decides which parameters are captured.
+  const SESSION_PARAM_KEYS = [
+    'jazoest', 'lsd', '__user', '__a', '__hs', 'dpr', '__ccg', '__rev',
+    '__s', '__hsi', '__dyn', '__csr', '__hsdp', '__hblp', '__sjsp', '__comet_req',
+    '__spin_r', '__spin_b', '__spin_t', '__jssesw', '__crn', '__d'
+  ];
+  const SESSION_PARAM_DEFAULTS = {
+    __user: '0',
+    __a: '1',
+    __d: 'www',
+    __crn: 'comet.threads.BarcelonaProfileThreadsColumnRoute'
+  };
+
   let cachedVersioningID = null;
+  let versioningIDLookupDone = false;
 
   /**
-   * Extract versioningID from page scripts (cached after first extraction)
+   * Extract versioningID from page scripts.
+   * The ID is embedded in the initial HTML, so once the document has finished
+   * loading a miss is final and we stop rescanning inline scripts per request.
    * @returns {string|null} versioningID value
    */
   function extractVersioningID() {
-    // Return cached value if available
-    if (cachedVersioningID) {
+    if (versioningIDLookupDone) {
       return cachedVersioningID;
     }
+    versioningIDLookupDone = document.readyState === 'complete';
 
     try {
       // Search in all script tags for WebBloksVersioningID
@@ -26,6 +44,7 @@
           const match = content.match(/"versioningID":"([a-f0-9]+)"/);
           if (match) {
             cachedVersioningID = match[1];
+            versioningIDLookupDone = true;
             return cachedVersioningID;
           }
         }
@@ -46,35 +65,15 @@
     try {
       const params = new URLSearchParams(body);
 
-      const versioningID = extractVersioningID();
-
-      return {
+      const sessionParams = {
         fb_dtsg: params.get('fb_dtsg') || params.get('fb_dtsg_ag') || '',
-        jazoest: params.get('jazoest') || '',
-        lsd: params.get('lsd') || '',
-        __user: params.get('__user') || '0',
-        __a: params.get('__a') || '1',
-        __req: params.get('__req') || '',
-        __hs: params.get('__hs') || '',
-        dpr: params.get('dpr') || '',
-        __ccg: params.get('__ccg') || '',
-        __rev: params.get('__rev') || '',
-        __s: params.get('__s') || '',
-        __hsi: params.get('__hsi') || '',
-        __dyn: params.get('__dyn') || '',
-        __csr: params.get('__csr') || '',
-        __hsdp: params.get('__hsdp') || '',
-        __hblp: params.get('__hblp') || '',
-        __sjsp: params.get('__sjsp') || '',
-        __comet_req: params.get('__comet_req') || '',
-        __spin_r: params.get('__spin_r') || '',
-        __spin_b: params.get('__spin_b') || '',
-        __spin_t: params.get('__spin_t') || '',
-        __jssesw: params.get('__jssesw') || '',
-        __crn: params.get('__crn') || '',
-        __d: params.get('__d') || 'www',
-        __bkv: versioningID || '' // Add versioningID as __bkv
+        __bkv: extractVersioningID() || '' // versioningID, sent as a URL param
       };
+      for (const key of SESSION_PARAM_KEYS) {
+        sessionParams[key] = params.get(key) || SESSION_PARAM_DEFAULTS[key] || '';
+      }
+
+      return sessionParams;
     } catch (error) {
       console.error('[Threads Country Flags] Error extracting session params:', error);
       return null;

@@ -18,13 +18,17 @@ export default [
       'semi': ['error', 'always'],
       'no-var': 'error',
       'prefer-const': 'error',
-      'no-unused-vars': ['warn', { args: 'none' }],
+      'no-unused-vars': ['error', { args: 'none' }],
     },
   },
   {
-    files: ['src/background.js'],
-    languageOptions: {
-      sourceType: 'module',
-    },
+    // country-mappings.js is loaded before content.js in the same (ISOLATED)
+    // world, so COUNTRY_MAPPINGS is a shared global rather than an import.
+    files: ['src/country-mappings.js'],
+    rules: { 'no-unused-vars': 'off' },
+  },
+  {
+    files: ['src/content.js'],
+    languageOptions: { globals: { COUNTRY_MAPPINGS: 'readonly' } },
   },
 ];

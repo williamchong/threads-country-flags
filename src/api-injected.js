@@ -199,32 +199,13 @@
         url.searchParams.append('__bkv', sessionParams.__bkv);
       }
 
+      // Replay the captured session params as form fields, except __bkv
+      // (already sent as a URL param)
       const formData = new URLSearchParams();
-
-      if (sessionParams.fb_dtsg) formData.append('fb_dtsg', sessionParams.fb_dtsg);
-      if (sessionParams.jazoest) formData.append('jazoest', sessionParams.jazoest);
-      if (sessionParams.lsd) formData.append('lsd', sessionParams.lsd);
-      formData.append('__user', sessionParams.__user || '0');
-      formData.append('__a', sessionParams.__a || '1');
-      formData.append('__req', Math.random().toString(16).substring(2, 4));
-      if (sessionParams.__hs) formData.append('__hs', sessionParams.__hs);
-      if (sessionParams.dpr) formData.append('dpr', sessionParams.dpr);
-      if (sessionParams.__ccg) formData.append('__ccg', sessionParams.__ccg);
-      if (sessionParams.__rev) formData.append('__rev', sessionParams.__rev);
-      if (sessionParams.__s) formData.append('__s', sessionParams.__s);
-      if (sessionParams.__hsi) formData.append('__hsi', sessionParams.__hsi);
-      if (sessionParams.__dyn) formData.append('__dyn', sessionParams.__dyn);
-      if (sessionParams.__csr) formData.append('__csr', sessionParams.__csr);
-      if (sessionParams.__hsdp) formData.append('__hsdp', sessionParams.__hsdp);
-      if (sessionParams.__hblp) formData.append('__hblp', sessionParams.__hblp);
-      if (sessionParams.__sjsp) formData.append('__sjsp', sessionParams.__sjsp);
-      if (sessionParams.__comet_req) formData.append('__comet_req', sessionParams.__comet_req);
-      if (sessionParams.__spin_r) formData.append('__spin_r', sessionParams.__spin_r);
-      if (sessionParams.__spin_b) formData.append('__spin_b', sessionParams.__spin_b);
-      if (sessionParams.__spin_t) formData.append('__spin_t', sessionParams.__spin_t);
-      if (sessionParams.__jssesw) formData.append('__jssesw', sessionParams.__jssesw);
-      formData.append('__crn', sessionParams.__crn || 'comet.threads.BarcelonaProfileThreadsColumnRoute');
-      formData.append('__d', sessionParams.__d || 'www');
+      for (const [key, value] of Object.entries(sessionParams)) {
+        if (key !== '__bkv' && value) formData.append(key, value);
+      }
+      formData.set('__req', Math.random().toString(16).substring(2, 4));
 
       // Add the params object with target_user_id
       const params = {
@@ -268,10 +249,13 @@
 
     const userInfo = await fetchUserCountry(userId, sessionParams);
 
-    // Send response back to content script
+    // Send response back to content script.
+    // `ok` distinguishes "API answered, no country" from "request failed" so
+    // the content script only persists genuine answers.
     window.dispatchEvent(new CustomEvent('threadsCountryResponse', {
       detail: {
         userId,
+        ok: userInfo !== null,
         countryName: userInfo?.countryName || null,
         joinDate: userInfo?.joinDate ?? null,
         requestId

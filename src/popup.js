@@ -16,13 +16,28 @@ function formatBytes(bytes) {
   return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
 }
 
+/**
+ * Read every persisted country entry
+ * @returns {Promise<Object>} Map of storage key → stored value
+ */
+async function getCountryItems() {
+  const allItems = await chrome.storage.local.get(null);
+  return Object.fromEntries(
+    Object.entries(allItems).filter(([key]) => key.startsWith(STORAGE_PREFIX))
+  );
+}
+
+async function clearAllCaches() {
+  const countryKeys = Object.keys(await getCountryItems());
+  await chrome.storage.local.remove(countryKeys);
+}
+
 async function getStorageStats() {
   try {
-    const allItems = await chrome.storage.local.get(null);
-    const countryKeys = Object.keys(allItems).filter(key => key.startsWith(STORAGE_PREFIX));
+    const countryItems = await getCountryItems();
+    const countryKeys = Object.keys(countryItems);
 
     // Calculate storage size for country entries only
-    const countryItems = Object.fromEntries(countryKeys.map(k => [k, allItems[k]]));
     const storageBytes = new Blob([JSON.stringify(countryItems)]).size;
 
     return {
@@ -56,7 +71,7 @@ document.getElementById('clearCache').addEventListener('click', async () => {
   button.textContent = chrome.i18n.getMessage('buttonClearing');
 
   try {
-    await chrome.runtime.sendMessage({ type: 'CLEAR_CACHE' });
+    await clearAllCaches();
     successMessage.style.display = 'block';
     await updateStats();
     setTimeout(() => { successMessage.style.display = 'none'; }, 2000);
