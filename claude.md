@@ -42,6 +42,7 @@ interceptor.js (MAIN) → intercepts XHR to /bulk-route-definitions
 content.js (ISOLATED) → IntersectionObserver detects visible profile links
   → waits 1s in viewport → checks LRU cache → checks chrome.storage.local
   → if miss: dispatches threadsRequestCountry event
+  → if the data isn't there yet: retries while the link stays in view
 
 api-injected.js (MAIN) → calls Threads "About This Profile" API with session cookies
   → strips for(;;); CSRF prefix, parses JSON
@@ -64,6 +65,22 @@ Additional filters: `shouldSkipImageLink()` skips image-only links (profile pict
 - **No-country TTL**: "No country" results cached with `cachedAt` timestamp, expire after 1 day (`NO_COUNTRY_TTL_MS`) to allow retries
 - **Failures are not persisted**: the API response carries `ok`; timeouts, HTTP errors and missing session params are kept in the in-memory cache only (so a page reload retries) and never written to `chrome.storage.local`
 - **Country data**: Never expires (rarely changes)
+
+### Viewport Retries
+
+IntersectionObserver only reports threshold crossings, so a link already in view
+when its user ID arrives gets no further callback of its own. `startViewAttempts()`
+therefore re-arms the dwell timer instead of giving up after one attempt:
+`addCountryFlag()` returns whether the link reached a state no further attempt can
+improve, and the chain retries up to `MAX_VIEW_ATTEMPTS` times, `VIEW_RETRY_MS`
+apart, covering a late user ID, late session params, and a display name that
+hasn't rendered yet.
+
+The chain object lives in the `pendingViewChains` WeakMap that also holds its
+pending timer, so a detached link stays collectable and the observer's
+"left viewport" branch cancels the chain. The entry persists across the `await`
+as the "a chain is running" marker; a resuming callback compares chain identity
+so it cannot re-arm over a newer chain started while it was in flight.
 
 ### Country Resolution
 
