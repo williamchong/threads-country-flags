@@ -140,18 +140,101 @@ function getCountryCode(countryName) {
 const COUNTRY_HIDDEN_MARKER = '__COUNTRY_HIDDEN__';
 const PIRATE_FLAG = '🏴‍☠️';
 
+// Generic colour-emoji stack, used only by the probes below to pin them to
+// whichever colour emoji font this system has. The badge itself inherits
+// threads.com's own font-family; this list is not what it resolves to.
+const EMOJI_FONT_STACK = '"Twemoji Mozilla","Apple Color Emoji","Segoe UI Emoji",' +
+  '"Segoe UI Symbol","Noto Color Emoji","EmojiOne Color","Android Emoji",sans-serif';
+
+// Flags whose vendor coverage is patchy even where flags generally work. XK
+// (Kosovo) is user-assigned rather than ISO 3166-1, so it is not guaranteed to
+// be present - Apple ships it, others may not. Probed at init rather than
+// assumed, so a working native glyph is never overridden.
+const PATCHY_FLAG_CODES = ['XK'];
+
+// Both filled in by init(): either no flag renders natively, or only the
+// individual PATCHY_FLAG_CODES this browser happens to lack.
+let allFlagsNeedBundledFont = false;
+const unsupportedFlagCodes = new Set();
+
+let emojiProbeCtx = null;
+
 /**
- * Convert country name to flag emoji
- * @param {string} countryName - Country name in any supported language
- * @returns {string} Flag emoji or empty string if not found
+ * Shared 1x1 canvas used to ask the renderer what it actually drew.
+ * @returns {CanvasRenderingContext2D|null} Probe context, or null if unavailable
  */
-function countryNameToFlag(countryName) {
-  // Handle hidden country marker
-  if (countryName === COUNTRY_HIDDEN_MARKER) {
-    return PIRATE_FLAG;
+function getEmojiProbeContext() {
+  if (!emojiProbeCtx) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1;
+    canvas.height = 1;
+    emojiProbeCtx = canvas.getContext('2d', { willReadFrequently: true });
+    if (emojiProbeCtx) {
+      emojiProbeCtx.textBaseline = 'top';
+      emojiProbeCtx.font = `100px ${EMOJI_FONT_STACK}`;
+      // Squash the whole 100px glyph down into the single pixel we sample, so
+      // the reading averages the glyph rather than one arbitrary corner
+      emojiProbeCtx.scale(0.01, 0.01);
+    }
   }
-  const code = getCountryCode(countryName);
-  return code ? countryCodeToFlag(code) : '';
+  return emojiProbeCtx;
+}
+
+/**
+ * Does this text render as a colour glyph?
+ *
+ * A colour font ignores fillStyle, so drawing the same text in white and in
+ * black yields identical pixels. Monochrome text - such as the two boxed
+ * letters Windows produces for a flag - is painted in the fill colour and so
+ * differs between the two passes.
+ *
+ * Adapted from country-flag-emoji-polyfill (MIT, (c) 2022 TalkJS).
+ *
+ * @param {string} text - Text to probe
+ * @returns {boolean} True if drawn as a colour glyph
+ */
+function isColorGlyph(text) {
+  const ctx = getEmojiProbeContext();
+  if (!ctx) return true;
+
+  try {
+    const render = (color) => {
+      ctx.clearRect(0, 0, 100, 100);
+      ctx.fillStyle = color;
+      ctx.fillText(text, 0, 0);
+      return ctx.getImageData(0, 0, 1, 1).data.join(',');
+    };
+    const onWhite = render('#fff');
+    const onBlack = render('#000');
+    return onWhite === onBlack && !onBlack.startsWith('0,0,0,');
+  } catch {
+    // Canvas readback blocked (fingerprinting protection) - leave rendering alone
+    return true;
+  }
+}
+
+/**
+ * Detect whether this browser renders regional indicator pairs as flag emoji.
+ *
+ * Chrome on Windows does not: Segoe UI Emoji carries no regional indicator
+ * ligatures, so the pair falls back to two boxed letters. Asking the renderer
+ * beats sniffing the platform - it stays correct on Windows machines that have
+ * a flag font installed, and switches itself off if Segoe ever gains the glyphs.
+ *
+ * @returns {boolean} True if flag emoji already render natively
+ */
+function supportsFlagEmoji() {
+  // Only trust a negative flag result if colour emoji work here at all
+  return !isColorGlyph('\u{1F60A}') || isColorGlyph(countryCodeToFlag('CH'));
+}
+
+/**
+ * Does this browser need the bundled font to draw this flag?
+ * @param {string} countryCode - ISO 3166-1 alpha-2 code
+ * @returns {boolean} True if the native glyph is missing
+ */
+function needsBundledFont(countryCode) {
+  return allFlagsNeedBundledFont || unsupportedFlagCodes.has(countryCode);
 }
 
 // Track username to user ID mapping (built from GraphQL responses)
@@ -559,8 +642,9 @@ async function addCountryFlag(linkElement, username) {
   const insertionPoint = findInsertionPoint(linkElement);
 
   // Convert country name to flag emoji for display
-  const flagEmoji = userInfo.countryName ? countryNameToFlag(userInfo.countryName) : '';
   const isHidden = userInfo.countryName === COUNTRY_HIDDEN_MARKER;
+  const countryCode = isHidden ? null : getCountryCode(userInfo.countryName || '');
+  const flagEmoji = isHidden ? PIRATE_FLAG : countryCodeToFlag(countryCode || '');
 
   // Build display flag (empty string if no country)
   let displayFlag = '';
@@ -586,20 +670,29 @@ async function addCountryFlag(linkElement, username) {
     titleText = titleText ? `${titleText} (${newUserLabel})` : newUserLabel;
   }
 
-  // Build display text (flag + badge with proper spacing)
-  const displayParts = [displayFlag, newUserBadge].filter(Boolean);
-  const displayText = displayParts.length > 0 ? ` ${displayParts.join(' ')}` : '';
-
   // Skip if nothing to display
-  if (!displayText) {
+  if (!displayFlag && !newUserBadge) {
     return;
   }
 
   // Create flag element
   const flagSpan = document.createElement('span');
   flagSpan.className = 'threads-country-flag';
-  flagSpan.textContent = displayText;
   flagSpan.title = titleText;
+
+  if (countryCode && needsBundledFont(countryCode)) {
+    // Wrap the flag so the bundled font applies to the glyph alone - the 🔰
+    // badge and the {Country Name} fallback must keep the page's own font
+    const glyphSpan = document.createElement('span');
+    glyphSpan.className = 'threads-country-flag-glyph';
+    glyphSpan.textContent = displayFlag;
+    flagSpan.append(' ', glyphSpan);
+    if (newUserBadge) {
+      flagSpan.append(` ${newUserBadge}`);
+    }
+  } else {
+    flagSpan.textContent = ` ${[displayFlag, newUserBadge].filter(Boolean).join(' ')}`;
+  }
 
   // Insert flag right after the display name text (inside the span)
   insertionPoint.appendChild(flagSpan);
@@ -705,6 +798,19 @@ function handleMutations(mutations, observer) {
  * Initialize the extension
  */
 function init() {
+  // Chrome on Windows cannot render flag emoji; use the bundled flag font only
+  // where the browser actually needs it, so native emoji win elsewhere.
+  if (supportsFlagEmoji()) {
+    // Flags work in general, but a few have patchy vendor coverage
+    for (const code of PATCHY_FLAG_CODES) {
+      if (!isColorGlyph(countryCodeToFlag(code))) {
+        unsupportedFlagCodes.add(code);
+      }
+    }
+  } else {
+    allFlagsNeedBundledFont = true;
+  }
+
   // Set up intersection observer to track elements in viewport
   const intersectionObserver = new IntersectionObserver(handleIntersection, {
     root: null, // viewport

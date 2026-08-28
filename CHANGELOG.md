@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+**Bug Fixes:**
+- Flags now render on Windows. Chrome on Windows falls back to Segoe UI Emoji, which ships no regional-indicator ligatures, so every flag appeared as two boxed letters ("US" instead of 🇺🇸). The extension now bundles a flag-only Twemoji colour font and applies it when a runtime canvas probe finds the browser cannot draw flags natively; platforms with working flag emoji are left untouched.
+
 ## v1.1.2 (2026-08-28)
 
 **Bug Fixes:**

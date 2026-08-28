@@ -49,6 +49,7 @@ If flags are not appearing:
    - **No data yet**: Scroll through your feed to trigger bulk-route-definitions requests
    - **Pirate flag 🏴‍☠️**: User has hidden their country in privacy settings
    - **New user badge 🔰**: Account created within the last 60 days
+   - **Flags show as letter pairs ("US", "JP")**: The browser has no flag glyphs (Chrome on Windows). The extension bundles a font for this; if letters persist, an anti-fingerprinting setting may be blocking the canvas check that detects it
 
 ## How It Works
 
@@ -77,6 +78,14 @@ Contributions are welcome! Please feel free to submit issues or pull requests.
 ## License
 
 MIT License - see LICENSE file for details
+
+This extension bundles **Twemoji Country Flags** (`src/flag-font.css`, built from
+`vendor/TwemojiCountryFlags.woff2`) to supply flag glyphs on platforms that lack
+them. The font is built by [TalkJS](https://github.com/talkjs/country-flag-emoji-polyfill)
+(MIT); its flag artwork comes from [Twemoji](https://github.com/twitter/twemoji)
+and is used under [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+See `vendor/TwemojiCountryFlags.LICENSE.md`. The colour-glyph detection in
+`src/content.js` is adapted from the same project.
 
 ## Disclaimer
 

@@ -10,12 +10,17 @@ Chrome extension (Manifest V3) that displays country flags next to usernames on 
 
 ## Development
 
-No bundler or build process. To test changes, load the extension in Chrome via `chrome://extensions` → "Load unpacked" → select this repo's root directory. Reload the extension after code changes.
+No bundler. Chrome loads `src/` directly; the only generated file is
+`src/flag-font.css` (see [Flag Glyph Rendering](#flag-glyph-rendering)), which is
+committed, so a checkout needs no build step. To test changes, load the extension
+in Chrome via `chrome://extensions` → "Load unpacked" → select this repo's root
+directory. Reload the extension after code changes.
 
 ```bash
-npm run lint       # Run ESLint on src/
-npm run lint:fix   # Auto-fix fixable lint issues
-npm run package    # Create threads-country-flags.zip for Chrome Web Store
+npm run lint             # Run ESLint on src/
+npm run lint:fix         # Auto-fix fixable lint issues
+npm run package          # Create threads-country-flags.zip for Chrome Web Store
+npm run build:flag-font  # Regenerate src/flag-font.css (only when the font changes)
 ```
 
 ## Architecture
@@ -68,6 +73,31 @@ Special cases:
 - Hidden country (user opted out): returns `__COUNTRY_HIDDEN__` → displays 🏴‍☠️
 - New user (joined within 60 days): displays 🔰 badge (shown even without country data)
 - Unknown country name: displays `{Country Name}` as fallback
+
+### Flag Glyph Rendering
+
+Chrome on Windows resolves emoji to Segoe UI Emoji, which carries no
+regional-indicator ligatures, so `🇺🇸` renders as two boxed letters. The extension
+bundles **Twemoji Country Flags**, a flag-only COLR font, in `src/flag-font.css`.
+
+- The font is **inlined as a base64 `data:` URI**, not loaded via
+  `chrome.runtime.getURL()`. threads.com sends `font-src data: static.cdninstagram.com`,
+  which does not cover `chrome-extension://`, but does allow `data:`. This also
+  avoids needing `web_accessible_resources`. Regenerate with `npm run build:flag-font`.
+- `unicode-range` is limited to `U+1F1E6-1F1FF`. The upstream polyfill also claims
+  `U+1F3F4` for subdivision flags; this font has no pirate ZWJ sequence, so
+  claiming it would split 🏴‍☠️ into a black flag plus a skull across two fonts.
+- Applied by **runtime detection, not platform sniffing**. `isColorGlyph()` in
+  `content.js` draws text to a 1×1 canvas in white and again in black: a colour
+  font ignores `fillStyle` so the two passes match, while monochrome letter boxes
+  differ. `init()` records the result; `needsBundledFont()` reads it per flag.
+- The `.threads-country-flag-glyph` wrapper is created **only when the bundled
+  font is actually needed**. It scopes the font to the glyph, leaving 🔰, 🏴‍☠️ and
+  the `{Country Name}` fallback on the page's font; everywhere else the badge
+  stays the original single text node.
+- `PATCHY_FLAG_CODES` (currently `XK`) is probed individually, because Kosovo is
+  user-assigned rather than ISO 3166-1 and vendor coverage varies — Apple ships a
+  glyph, so it must not be overridden blindly.
 
 ### Request Deduplication
 

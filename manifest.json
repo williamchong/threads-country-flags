@@ -20,7 +20,7 @@
     {
       "matches": ["https://www.threads.com/*"],
       "js": ["src/country-mappings.js", "src/content.js"],
-      "css": ["src/styles.css"],
+      "css": ["src/flag-font.css", "src/styles.css"],
       "run_at": "document_start",
       "world": "ISOLATED"
     }

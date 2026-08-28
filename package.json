@@ -4,9 +4,10 @@
   "private": true,
   "description": "A Chrome extension that displays country flags next to usernames on Threads.com by leveraging the official Threads API.",
   "scripts": {
+    "build:flag-font": "node scripts/build-flag-font.mjs",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
-    "package": "zip -r threads-country-flags.zip manifest.json src/ icons/ _locales/ PRIVACY.md -x '*.DS_Store'"
+    "package": "zip -r threads-country-flags.zip manifest.json src/ icons/ _locales/ PRIVACY.md vendor/TwemojiCountryFlags.LICENSE.md -x '*.DS_Store'"
   },
   "keywords": [],
   "author": "",

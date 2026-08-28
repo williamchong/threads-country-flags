@@ -41,3 +41,12 @@
 .threads-country-flag {
   animation: fadeIn 0.2s ease-out;
 }
+
+/*
+ * Present only when this browser has no native glyph for the flag; content.js
+ * wraps the flag alone so the 🔰 badge, 🏴‍☠️ and the `{Country Name}` text
+ * fallback stay outside it and keep inheriting the page's font.
+ */
+.threads-country-flag-glyph {
+  font-family: 'Twemoji Country Flags', sans-serif;
+}
