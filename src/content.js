@@ -11,6 +11,8 @@ const MAX_COUNTRY_CACHE_SIZE = 500;   // Maximum countries to cache in memory
 const NO_COUNTRY_TTL_MS = 24 * 60 * 60 * 1000; // 1 day TTL for "no country" cache entries
 const NEW_USER_DAYS = 60;             // Users who joined within this many days get the 🔰 badge
 const VIEW_DWELL_MS = 1000;           // Link must stay in viewport this long before we fetch
+const VIEW_RETRY_MS = 2000;           // Gap between retries of a lookup that couldn't run yet
+const MAX_VIEW_ATTEMPTS = 3;          // Retries after the initial dwell attempt
 const API_TIMEOUT_MS = 10000;         // Give up waiting for the injected API after this
 const INITIAL_SCAN_DELAY_MS = 2000;   // Wait for initial route data before scanning links
 const PROFILE_LINK_SELECTOR = 'a[href*="/@"][role="link"]';
@@ -257,8 +259,9 @@ const pendingCountryRequests = new Map();
 const userCountryPromises = new Map();
 let countryRequestId = 0;
 
-// Track pending timers for intersection observer
-const pendingViewTimers = new WeakMap();
+// Retry chains for links currently dwelling in the viewport, keyed by link.
+// WeakMap-keyed so a detached link is collectable with its pending attempt.
+const pendingViewChains = new WeakMap();
 
 // Links that have ever been observed. Never pruned, so a link unobserved at a
 // terminal state is not picked up again by a later scan.
@@ -604,31 +607,33 @@ async function fetchUserInfoFromApi(userId) {
  * Add country flag next to username
  * @param {HTMLElement} linkElement - Profile link element
  * @param {string} username - Username (without @)
+ * @returns {Promise<boolean>} True once the link has reached a state no further
+ *   attempt can improve; false while a retry could still succeed
  */
 async function addCountryFlag(linkElement, username) {
-  // Skip if already handled (or in flight)
+  // Skip if already handled (or in flight) - whoever owns it will finish it
   if (linkElement.hasAttribute(PROCESSED_ATTR)) {
-    return;
+    return true;
   }
 
   // Page headers never carry a flag, and no re-render changes that
   if (linkElement.closest('h1')) {
     intersectionObserver?.unobserve(linkElement);
-    return;
+    return true;
   }
 
   // Image-only links (profile pictures) stay observed: the test is content
   // based, so a link whose display name hasn't rendered yet must stay eligible
   if (shouldSkipImageLink(linkElement)) {
-    return;
+    return false;
   }
 
   // Get user ID from our mapping
   const userId = usernameToIdMap.get(username);
 
   if (!userId) {
-    // We don't have the user ID yet - it will be added when GraphQL data arrives
-    return;
+    // The ID arrives with a later /bulk-route-definitions response, so retry
+    return false;
   }
 
   // Mark in-flight before the first await so a re-entrant call can't double-insert
@@ -638,8 +643,7 @@ async function addCountryFlag(linkElement, username) {
   if (!userInfo) {
     // Lookup couldn't run yet (no session params, or error) - allow a retry
     linkElement.removeAttribute(PROCESSED_ATTR);
-    if (!sessionParams) linksAwaitingSession.add(linkElement);
-    return;
+    return false;
   }
 
   linkElement.setAttribute(PROCESSED_ATTR, 'true');
@@ -650,7 +654,7 @@ async function addCountryFlag(linkElement, username) {
 
   // If no country data AND not a new user, skip
   if (!userInfo.countryName && !userInfo.isNewUser) {
-    return;
+    return true;
   }
 
   // Find where to insert the flag
@@ -687,7 +691,7 @@ async function addCountryFlag(linkElement, username) {
 
   // Skip if nothing to display
   if (!displayFlag && !newUserBadge) {
-    return;
+    return true;
   }
 
   // Create flag element
@@ -711,9 +715,52 @@ async function addCountryFlag(linkElement, username) {
 
   // Insert flag right after the display name text (inside the span)
   insertionPoint.appendChild(flagSpan);
+  return true;
 }
 
 
+
+/**
+ * Attempt a lookup once the link has dwelled in view, retrying while the data
+ * it needs (user ID, session params, a rendered display name) is still missing.
+ *
+ * IntersectionObserver only reports threshold crossings, so a link that is
+ * already in view when its data arrives gets no second callback of its own.
+ *
+ * The chain object stays in pendingViewChains for the whole chain, not just
+ * for each pending timer, so it doubles as the "a chain is running" marker: a
+ * further intersection event cannot start a competing chain, and the leaving
+ * branch deleting it cancels the chain even mid-await. Identity is checked on
+ * the chain rather than the timer id, which browsers may reuse once spent.
+ * @param {HTMLElement} linkElement - Profile link element
+ * @param {string} username - Username (without @)
+ */
+function startViewAttempts(linkElement, username) {
+  if (pendingViewChains.has(linkElement)) return;
+
+  const chain = { timer: null };
+
+  const run = (delay, attempt) => {
+    chain.timer = setTimeout(async () => {
+      const resolved = await addCountryFlag(linkElement, username);
+
+      // Cancelled by the leaving branch, or superseded by a newer chain, while
+      // the lookup was in flight
+      if (pendingViewChains.get(linkElement) !== chain) return;
+
+      if (resolved || attempt >= MAX_VIEW_ATTEMPTS) {
+        pendingViewChains.delete(linkElement);
+        return;
+      }
+
+      run(VIEW_RETRY_MS, attempt + 1);
+    }, delay);
+
+    pendingViewChains.set(linkElement, chain);
+  };
+
+  run(VIEW_DWELL_MS, 0);
+}
 
 /**
  * Handle intersection events (elements entering/leaving viewport)
@@ -730,19 +777,13 @@ function handleIntersection(entries) {
       const username = extractUsernameFromLink(linkElement);
       if (!username) continue;
 
-      // Process only once the link has stayed in view for VIEW_DWELL_MS
-      const timer = setTimeout(() => {
-        addCountryFlag(linkElement, username);
-        pendingViewTimers.delete(linkElement);
-      }, VIEW_DWELL_MS);
-
-      pendingViewTimers.set(linkElement, timer);
+      startViewAttempts(linkElement, username);
     } else {
-      // Element left viewport - cancel timer
-      const timer = pendingViewTimers.get(linkElement);
-      if (timer) {
-        clearTimeout(timer);
-        pendingViewTimers.delete(linkElement);
+      // Element left viewport - cancel the pending timer and its retry chain
+      const chain = pendingViewChains.get(linkElement);
+      if (chain) {
+        clearTimeout(chain.timer);
+        pendingViewChains.delete(linkElement);
       }
     }
   }
