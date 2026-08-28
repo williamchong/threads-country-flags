@@ -63,8 +63,32 @@ Additional filters: `shouldSkipImageLink()` skips image-only links (profile pict
 - **In-memory**: LRU caches with size limits (`MAX_USERNAME_CACHE_SIZE=1000`, `MAX_COUNTRY_CACHE_SIZE=500`)
 - **Persistent**: `chrome.storage.local` with `country_` prefix. Stores `{countryName, joinDate, cachedAt}`
 - **No-country TTL**: "No country" results cached with `cachedAt` timestamp, expire after 1 day (`NO_COUNTRY_TTL_MS`) to allow retries
-- **Failures are not persisted**: the API response carries `ok`; timeouts, HTTP errors and missing session params are kept in the in-memory cache only (so a page reload retries) and never written to `chrome.storage.local`
+- **Failures are never cached**: the API response carries `ok`; timeouts, HTTP errors and
+  missing session params are written to neither the LRU
+  nor `chrome.storage.local`. `fetchUserInfoFromApi()` returns `null` instead, which
+  leaves the link eligible for the viewport retry chain. Caching a failure would be
+  indistinguishable from a real "no country" answer, so it would mark the link terminal
+  and unobserve it — a single 429 would blank that user for the life of the page
 - **Country data**: Never expires (rarely changes)
+
+### Rate Limiting
+
+The API response carries `status`, so `content.js` can tell a rate limit apart from a
+stale token. `noteApiOutcome()` closes a module-level gate that `resolveUserInfo()` checks
+before dispatching:
+
+- **429** — exponential backoff from `RATE_LIMIT_BASE_MS` (30s), doubling per consecutive
+  429, capped at `RATE_LIMIT_MAX_MS` (5min). A `Retry-After` header wins when present and
+  is clamped to the same ceiling, so an absurd value cannot freeze lookups for the life of
+  the page. The endpoint is same-origin with the content script's match pattern, so the
+  header is readable without CORS exposure headers.
+- **401** — `AUTH_COOLDOWN_MS` (15s) to wait out token rotation. Nothing is cleared:
+  `interceptor.js` overwrites `sessionParams` on every intercepted XHR, and clearing it
+  would strand every link if no later request carried a token.
+- **Everything else** (timeouts, 5xx, parse failures) sets no gate — the retry chain
+  already covers them, and none of them signal that waiting would help.
+
+Cached answers still render while the gate is closed; only new requests are suppressed.
 
 ### Viewport Retries
 
@@ -78,6 +102,12 @@ hasn't rendered yet.
 
 Chains are keyed by link in the `pendingViewChains` WeakMap, so a detached link
 stays collectable and the observer's "left viewport" branch cancels the chain.
+
+A lookup turned away by the rate-limit gate is not a terminal state, so the link keeps
+its observation. The chain exhausts its retries in ~7s, well inside a backoff window,
+but recovery is free: the next scroll produces a leave/enter pair and a fresh chain.
+That is why the gate needs no timer of its own and no resume jitter — resumption is
+staggered by the user's scrolling rather than synchronised on a single expiry.
 
 ### Country Resolution
 

@@ -177,16 +177,43 @@
   }
 
   /**
+   * Parse a Retry-After header into milliseconds
+   * Accepts both the delta-seconds and HTTP-date forms. The endpoint is same-origin
+   * with the content script's match pattern, so the header needs no CORS exposure.
+   * @param {string|null} value - Raw header value
+   * @returns {number|null} Delay in milliseconds, or null if absent or unparseable
+   */
+  function parseRetryAfter(value) {
+    if (!value) return null;
+
+    const seconds = Number(value);
+    if (Number.isFinite(seconds)) {
+      return Math.max(0, seconds * 1000);
+    }
+
+    const date = Date.parse(value);
+    if (!Number.isNaN(date)) {
+      return Math.max(0, date - Date.now());
+    }
+
+    return null;
+  }
+
+  /**
    * Fetch user country and join date from Threads API
+   *
+   * Always resolves to a discriminated result. This file reports what happened;
+   * content.js decides whether and when to retry, so no backoff policy lives here.
    * @param {string} userId - Numeric user ID
    * @param {Object} sessionParams - Session parameters captured from page
-   * @returns {Promise<{countryName: string|null, joinDate: number|null}|null>} User info or null on error
+   * @returns {Promise<{ok: true, countryName: string|null, joinDate: number|null}
+   *   |{ok: false, status: number|null, retryAfterMs?: number|null}>} Lookup result
    */
   async function fetchUserCountry(userId, sessionParams) {
     // Don't attempt API call if sessionParams is not set
     if (!sessionParams) {
       console.warn('[Threads Country Flags] ⚠️ sessionParams not available, skipping API call');
-      return null;
+      return { ok: false, status: null };
     }
 
     try {
@@ -228,18 +255,29 @@
 
       if (!response.ok) {
         console.error(`[Threads Country Flags] ❌ API request failed: ${response.status}`);
-        return null;
+        return {
+          ok: false,
+          status: response.status,
+          retryAfterMs: parseRetryAfter(response.headers.get('Retry-After'))
+        };
       }
 
       const responseText = await response.text();
       const data = parseThreadsResponse(responseText);
       const result = extractCountryFromResponse(data);
 
-      return result;
+      // A 200 carrying no usable profile data is not an answer worth caching
+      if (!result) {
+        return { ok: false, status: response.status };
+      }
+
+      return { ok: true, countryName: result.countryName, joinDate: result.joinDate };
 
     } catch (error) {
+      // `response` is scoped to the try, so a post-response parse throw is reported
+      // as a network failure. content.js only branches on 429/401, so this is inert.
       console.error('[Threads Country Flags] ❌ Error fetching country:', error);
-      return null;
+      return { ok: false, status: 0 };
     }
   }
 
@@ -247,17 +285,20 @@
   window.addEventListener('threadsRequestCountry', async (event) => {
     const { userId, sessionParams, requestId } = event.detail;
 
-    const userInfo = await fetchUserCountry(userId, sessionParams);
+    const result = await fetchUserCountry(userId, sessionParams);
 
     // Send response back to content script.
-    // `ok` distinguishes "API answered, no country" from "request failed" so
-    // the content script only persists genuine answers.
+    // `ok` distinguishes "API answered, no country" from "request failed" so the
+    // content script only persists genuine answers; `status` lets it tell a rate
+    // limit apart from a stale token, a timeout or a transient server error.
     window.dispatchEvent(new CustomEvent('threadsCountryResponse', {
       detail: {
         userId,
-        ok: userInfo !== null,
-        countryName: userInfo?.countryName || null,
-        joinDate: userInfo?.joinDate ?? null,
+        ok: result.ok,
+        status: result.status ?? null,
+        retryAfterMs: result.retryAfterMs ?? null,
+        countryName: result.countryName || null,
+        joinDate: result.joinDate ?? null,
         requestId
       }
     }));

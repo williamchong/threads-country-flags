@@ -15,6 +15,11 @@ const VIEW_RETRY_MS = 2000;           // Gap between retries of a lookup that co
 const MAX_VIEW_RETRIES = 3;           // Retries after the initial dwell attempt
 const API_TIMEOUT_MS = 10000;         // Give up waiting for the injected API after this
 const INITIAL_SCAN_DELAY_MS = 2000;   // Wait for initial route data before scanning links
+const RATE_LIMIT_BASE_MS = 30 * 1000;     // Backoff after the first 429
+const RATE_LIMIT_MAX_MS = 5 * 60 * 1000;  // Backoff ceiling; also clamps Retry-After
+const AUTH_COOLDOWN_MS = 15 * 1000;       // 401: wait out session token rotation
+const HTTP_UNAUTHORIZED = 401;            // Session token rejected
+const HTTP_TOO_MANY_REQUESTS = 429;       // Rate limited
 const PROFILE_LINK_SELECTOR = 'a[href*="/@"][role="link"]';
 const PROFILE_HREF_RE = /\/@([a-zA-Z0-9_.]+)$/; // Profile links only (no /post/... suffix)
 const PROCESSED_ATTR = 'data-threads-flag-processed';
@@ -261,6 +266,12 @@ const pendingCountryRequests = new Map();
 const userCountryPromises = new Map();
 let countryRequestId = 0;
 
+// Rate-limit gate. A 429 or 401 closes it and resolveUserInfo() turns lookups away
+// without dispatching until it reopens. Gated links are never unobserved, so the next
+// scroll gives them a fresh retry chain - the gate needs no timer of its own.
+let gateUntil = 0;
+let consecutiveRateLimits = 0;
+
 // Retry chains for links currently dwelling in the viewport, keyed by link.
 // A pending timer's closure is what retains the link, not this map; the chain
 // is dropped when the link leaves the viewport, which is also how the observer
@@ -330,13 +341,13 @@ window.addEventListener('threadsSessionParams', (event) => {
  * Listen for country responses from injected API
  */
 window.addEventListener('threadsCountryResponse', (event) => {
-  const { ok, countryName, joinDate, requestId } = event.detail;
+  const { ok, status, retryAfterMs, countryName, joinDate, requestId } = event.detail;
 
   // Resolve pending promise with full user info
   const resolve = pendingCountryRequests.get(requestId);
   if (resolve) {
     pendingCountryRequests.delete(requestId);
-    resolve({ ok, countryName, joinDate });
+    resolve({ ok, status, retryAfterMs, countryName, joinDate });
   }
 });
 
@@ -521,6 +532,39 @@ function shouldSkipImageLink(linkElement) {
 }
 
 /**
+ * Record an API outcome, closing the rate-limit gate when the server asked us to back
+ * off. Timeouts, 5xx and parse failures set no gate: the viewport retry chain already
+ * covers those, and none of them carry a signal that waiting would help.
+ * @param {Object|null} apiResponse - Response detail, or null if the request timed out
+ */
+function noteApiOutcome(apiResponse) {
+  if (apiResponse?.ok) {
+    consecutiveRateLimits = 0;
+    return;
+  }
+
+  let cooldownMs = 0;
+
+  if (apiResponse?.status === HTTP_TOO_MANY_REQUESTS) {
+    consecutiveRateLimits++;
+    // Clamp Retry-After as well as our own backoff: an absurd header value must not be
+    // able to freeze lookups for the life of the page
+    const backoffMs = apiResponse.retryAfterMs
+      ?? RATE_LIMIT_BASE_MS * 2 ** (consecutiveRateLimits - 1);
+    cooldownMs = Math.min(backoffMs, RATE_LIMIT_MAX_MS);
+  } else if (apiResponse?.status === HTTP_UNAUTHORIZED) {
+    // Stale session token. interceptor.js overwrites sessionParams on every intercepted
+    // XHR, so waiting is enough - there is nothing to clear, and clearing it would
+    // strand every link if no further request ever carries a token.
+    cooldownMs = AUTH_COOLDOWN_MS;
+  }
+
+  if (cooldownMs > 0) {
+    gateUntil = Math.max(gateUntil, Date.now() + cooldownMs);
+  }
+}
+
+/**
  * Look up user info from memory, storage, or the API (in that order)
  * @param {string} userId
  * @returns {Promise<Object|null>} {countryName, joinDate, isNewUser}, or null if
@@ -535,6 +579,11 @@ async function resolveUserInfo(userId) {
     countryCache.set(userId, userInfo);
     return userInfo;
   }
+
+  // Backing off after a 429/401: turn the lookup away without dispatching. The caller
+  // leaves the link observed, so a later scroll retries it for free. Cached answers are
+  // already served above, so the gate only suppresses new requests.
+  if (Date.now() < gateUntil) return null;
 
   // Without session params the API call cannot succeed
   if (!sessionParams) return null;
@@ -557,7 +606,8 @@ async function resolveUserInfo(userId) {
 /**
  * Fetch user info via the injected MAIN-world API and cache the result
  * @param {string} userId
- * @returns {Promise<Object>} {countryName, joinDate, isNewUser}
+ * @returns {Promise<Object|null>} {countryName, joinDate, isNewUser}, or null if the
+ *   lookup failed and should be retried
  */
 async function fetchUserInfoFromApi(userId) {
   const requestId = ++countryRequestId;
@@ -577,21 +627,25 @@ async function fetchUserInfoFromApi(userId) {
   // Clean up pending request entry regardless of which promise won
   pendingCountryRequests.delete(requestId);
 
-  const joinDate = apiResponse?.joinDate ?? null;
+  noteApiOutcome(apiResponse);
+
+  // Cache nothing on failure. A cached failure is indistinguishable from a genuine
+  // "no country" answer, so it would mark the link terminal and unobserve it - one
+  // 429 would blank that user for the life of the page. Returning null instead
+  // leaves the link eligible for the viewport retry chain.
+  if (!apiResponse?.ok) return null;
+
+  const joinDate = apiResponse.joinDate ?? null;
   const info = {
-    countryName: apiResponse?.countryName ?? '',
+    countryName: apiResponse.countryName ?? '',
     joinDate,
     isNewUser: isNewUser(joinDate)
   };
 
   countryCache.set(userId, info);
 
-  // Persist only genuine API answers (including "no country", to avoid
-  // repeated API calls). Failures/timeouts stay in memory only so the
-  // next session retries instead of being cached for NO_COUNTRY_TTL_MS.
-  if (apiResponse?.ok) {
-    await saveCountryToStorage(userId, info);
-  }
+  // Persist genuine answers, including "no country", to avoid repeated API calls
+  await saveCountryToStorage(userId, info);
 
   return info;
 }
