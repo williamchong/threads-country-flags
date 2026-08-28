@@ -1,10 +1,10 @@
 {
   "extName": {
-    "message": "Threads Country Flags",
+    "message": "Threads Country Flags – Show User Country & Region",
     "description": "Extension name shown in Chrome Web Store and browser toolbar"
   },
   "extDescription": {
-    "message": "See where Threads users are from — country flags next to every username",
+    "message": "Adds a country flag next to every Threads username, so you can see where the accounts in your feed, replies and search are from.",
     "description": "Extension description shown in Chrome Web Store"
   },
   "popupTitle": {

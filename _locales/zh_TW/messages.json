@@ -1,10 +1,10 @@
 {
   "extName": {
-    "message": "Threads 國旗顯示器",
+    "message": "Threads 國旗顯示器 – 顯示脆友的國家地區",
     "description": "Extension name shown in Chrome Web Store and browser toolbar"
   },
   "extDescription": {
-    "message": "一眼看出 Threads 用戶來自哪個國家 — 在每個用戶名旁顯示國旗",
+    "message": "在 Threads（脆）每個用戶名旁顯示國旗，一眼看出動態、留言與搜尋結果中的帳號來自哪裡，涵蓋 138 個國家與地區。",
     "description": "Extension description shown in Chrome Web Store"
   },
   "popupTitle": {
