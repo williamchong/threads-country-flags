@@ -260,8 +260,12 @@ let countryRequestId = 0;
 // Track pending timers for intersection observer
 const pendingViewTimers = new WeakMap();
 
-// Track which links are currently being observed
+// Links that have ever been observed. Never pruned, so a link unobserved at a
+// terminal state is not picked up again by a later scan.
 const observedLinks = new WeakSet();
+
+// Assigned in init()
+let intersectionObserver = null;
 
 // Links whose lookup was skipped because session params weren't captured yet
 const linksAwaitingSession = new Set();
@@ -607,8 +611,15 @@ async function addCountryFlag(linkElement, username) {
     return;
   }
 
-  // Skip if link contains only an image/svg (profile picture) or inside h1
-  if (shouldSkipImageLink(linkElement) || linkElement.closest('h1')) {
+  // Page headers never carry a flag, and no re-render changes that
+  if (linkElement.closest('h1')) {
+    intersectionObserver?.unobserve(linkElement);
+    return;
+  }
+
+  // Image-only links (profile pictures) stay observed: the test is content
+  // based, so a link whose display name hasn't rendered yet must stay eligible
+  if (shouldSkipImageLink(linkElement)) {
     return;
   }
 
@@ -632,6 +643,10 @@ async function addCountryFlag(linkElement, username) {
   }
 
   linkElement.setAttribute(PROCESSED_ATTR, 'true');
+
+  // Release the observation: a resolved link never needs another lookup, and
+  // the observer would otherwise retain every link the feed has ever shown
+  intersectionObserver?.unobserve(linkElement);
 
   // If no country data AND not a new user, skip
   if (!userInfo.countryName && !userInfo.isNewUser) {
@@ -748,11 +763,10 @@ function isProfileLink(element) {
 /**
  * Start observing a profile link if it isn't already observed
  * @param {HTMLElement} link
- * @param {IntersectionObserver} observer
  */
-function observeLink(link, observer) {
+function observeLink(link) {
   if (!observedLinks.has(link)) {
-    observer.observe(link);
+    intersectionObserver.observe(link);
     observedLinks.add(link);
   }
 }
@@ -760,19 +774,18 @@ function observeLink(link, observer) {
 /**
  * Observe profile links found within a DOM node
  * @param {HTMLElement} root - Root element to search within
- * @param {IntersectionObserver} observer
  */
-function observeLinksInNode(root, observer) {
+function observeLinksInNode(root) {
   // Check if the node itself is a profile link
   if (isProfileLink(root)) {
-    observeLink(root, observer);
+    observeLink(root);
   }
 
   // Search within the node for profile links
   if (root.querySelectorAll) {
     for (const link of root.querySelectorAll(PROFILE_LINK_SELECTOR)) {
       if (isProfileLink(link)) {
-        observeLink(link, observer);
+        observeLink(link);
       }
     }
   }
@@ -782,13 +795,12 @@ function observeLinksInNode(root, observer) {
  * Handle mutations (new content added to page)
  * Only searches within added nodes instead of re-querying the entire DOM
  * @param {MutationRecord[]} mutations
- * @param {IntersectionObserver} observer
  */
-function handleMutations(mutations, observer) {
+function handleMutations(mutations) {
   for (const mutation of mutations) {
     for (const node of mutation.addedNodes) {
       if (node.nodeType === Node.ELEMENT_NODE) {
-        observeLinksInNode(node, observer);
+        observeLinksInNode(node);
       }
     }
   }
@@ -812,7 +824,7 @@ function init() {
   }
 
   // Set up intersection observer to track elements in viewport
-  const intersectionObserver = new IntersectionObserver(handleIntersection, {
+  intersectionObserver = new IntersectionObserver(handleIntersection, {
     root: null, // viewport
     rootMargin: '50px', // Start observing slightly before element enters viewport
     threshold: 0.1 // Trigger when 10% of element is visible
@@ -820,7 +832,7 @@ function init() {
 
   // Observe initial profile links after GraphQL data arrives
   setTimeout(() => {
-    observeLinksInNode(document.body, intersectionObserver);
+    observeLinksInNode(document.body);
   }, INITIAL_SCAN_DELAY_MS);
 
   // Set up mutation observer for dynamic content (just to find new links to observe)
@@ -832,7 +844,7 @@ function init() {
     pendingMutations.push(...mutations);
     if (!mutationRafId) {
       mutationRafId = requestAnimationFrame(() => {
-        handleMutations(pendingMutations, intersectionObserver);
+        handleMutations(pendingMutations);
         pendingMutations = [];
         mutationRafId = null;
       });
