@@ -270,9 +270,6 @@ const observedLinks = new WeakSet();
 // Assigned in init()
 let intersectionObserver = null;
 
-// Links whose lookup was skipped because session params weren't captured yet
-const linksAwaitingSession = new Set();
-
 /**
  * Format join date timestamp for display
  * @param {number} joinDateMs - Timestamp in milliseconds
@@ -323,14 +320,6 @@ window.addEventListener('threadsBulkRouteData', (event) => {
  */
 window.addEventListener('threadsSessionParams', (event) => {
   sessionParams = event.detail;
-
-  // Links that were viewed before session params arrived never get another
-  // intersection event while they stay in view, so retry them now
-  for (const link of linksAwaitingSession) {
-    const username = extractUsernameFromLink(link);
-    if (username) addCountryFlag(link, username);
-  }
-  linksAwaitingSession.clear();
 });
 
 /**
