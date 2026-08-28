@@ -20,7 +20,8 @@
   /**
    * Extract country and join date from API response
    * @param {Object} response - Parsed API response
-   * @returns {{countryName: string|null, joinDate: number|null}|null} User info or null on error
+   * @returns {{countryName: string|null, joinDate: number|null}|null} User info, or
+   *   null on error or when the payload carries no usable data
    */
   function extractCountryFromResponse(response) {
     try {
@@ -50,6 +51,13 @@
 
       // Extract join date by looking for text matching pattern: 20xx year + separator + stats
       const joinDate = extractJoinDate(response);
+
+      // Neither a country, nor an explicit "hidden", nor a join date: nothing worth
+      // caching, and what a challenge/logged-out payload looks like. Report it as a
+      // failure so it is never persisted for NO_COUNTRY_TTL_MS.
+      if (visibilityData === undefined && joinDate === null) {
+        return null;
+      }
 
       return {
         countryName,

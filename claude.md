@@ -63,8 +63,8 @@ Additional filters: `shouldSkipImageLink()` skips image-only links (profile pict
 - **In-memory**: LRU caches with size limits (`MAX_USERNAME_CACHE_SIZE=1000`, `MAX_COUNTRY_CACHE_SIZE=500`)
 - **Persistent**: `chrome.storage.local` with `country_` prefix. Stores `{countryName, joinDate, cachedAt}`
 - **No-country TTL**: "No country" results cached with `cachedAt` timestamp, expire after 1 day (`NO_COUNTRY_TTL_MS`) to allow retries
-- **Failures are never cached**: the API response carries `ok`; timeouts, HTTP errors and
-  missing session params are written to neither the LRU
+- **Failures are never cached**: the API response carries `ok`; timeouts, HTTP errors,
+  missing session params and payloads with no usable data are written to neither the LRU
   nor `chrome.storage.local`. `fetchUserInfoFromApi()` returns `null` instead, which
   leaves the link eligible for the viewport retry chain. Caching a failure would be
   indistinguishable from a real "no country" answer, so it would mark the link terminal
@@ -155,5 +155,9 @@ bundles **Twemoji Country Flags**, a flag-only COLR font, in `src/flag-font.css`
 - `THREADS_ABOUT_THIS_PROFILE:about_this_profile_country` — country name
 - `THREADS_ABOUT_THIS_PROFILE:about_this_profile_country_visibility` — whether country is public
 - Join date: not read from a keyed entry. `extractJoinDate()` walks the payload for the first `text` value containing a `20xx` year and a `·`/`•` separator (e.g. "December 2025 · 12 posts") and parses month/year from it
+
+A 200 whose payload carries neither a visibility entry nor a parseable join date is
+reported as a failure rather than as "no country" — that is what a challenge or
+logged-out response looks like, and it holds nothing worth caching for 24h.
 
 Session parameters (`fb_dtsg`, `lsd`, `jazoest`, `__bkv`) are refreshed on every intercepted XHR request to handle token rotation.
