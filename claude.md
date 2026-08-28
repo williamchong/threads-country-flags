@@ -63,7 +63,8 @@ Additional filters: `shouldSkipImageLink()` skips image-only links (profile pict
 - **In-memory**: LRU caches with size limits (`MAX_USERNAME_CACHE_SIZE=1000`, `MAX_COUNTRY_CACHE_SIZE=500`)
 - **Persistent**: `chrome.storage.local` with `country_` prefix. Stores `{countryName, joinDate, cachedAt}`
 - **No-country TTL**: "No country" results cached with `cachedAt` timestamp, expire after 1 day (`NO_COUNTRY_TTL_MS`) to allow retries
-- **Failures are never cached**: the API response carries `ok`; timeouts, HTTP errors, missing session params and unusable payloads go to neither the LRU nor `chrome.storage.local`. `fetchUserInfoFromApi()` returns `null`, so the link stays eligible for the viewport retry chain instead of being marked terminal
+- **Transient failures are never cached**: the API response carries `ok`; timeouts, 5xx, 401/429, missing session params and unusable payloads go to neither the LRU nor `chrome.storage.local`. `fetchUserInfoFromApi()` returns `null`, so the link stays eligible for the viewport retry chain instead of being marked terminal
+- **Permanent failures are cached as empty answers**: `isPermanentLookupFailure()` picks out `no-profile`, 404 and 403 — deleted, renamed away or walled off, where no retry can produce a different answer. They take the normal persist path with an empty `countryName`, so `cachedAt` and the 24h `NO_COUNTRY_TTL_MS` reopen them in case the profile returns. Nothing gates them, so uncached they would retry for the life of the page
 - **Country data**: Never expires (rarely changes)
 
 ### Rate Limiting
@@ -95,7 +96,12 @@ dispatching:
   would turn a brief outage into a request storm: four chain attempts per link times a
   viewport of links, repeated on every scroll pass.
 - **Timeouts and `no-profile`** set no gate. A timeout self-throttles at
-  `API_TIMEOUT_MS`, and a missing profile is one user's problem, not the server's.
+  `API_TIMEOUT_MS`, and a missing profile is one user's problem, not the server's — the
+  gate is a whole-page brake, so one dead user must not apply it to everyone else.
+  `no-profile` is bounded by being cached instead (see Caching above).
+
+The backoff floors the episode count at 1: a 429 answering a request that was already in
+flight when another failure closed the gate skips the increment above.
 
 Cached answers still render while the gate is closed; only new requests are suppressed.
 Each gate close logs a warning, so "flags stopped appearing" is diagnosable.
@@ -120,8 +126,8 @@ produces a leave/enter pair and a fresh chain. That is why the gate needs no tim
 own and no resume jitter — resumption is staggered by the user's scrolling rather than
 synchronised on a single expiry.
 
-Because a failed lookup is non-terminal, its link stays observed, and under a sustained
-outage those accumulate. The "left viewport" branch therefore releases any link that is
+Because a transient failed lookup is non-terminal, its link stays observed, and under
+a sustained outage those accumulate. The "left viewport" branch therefore releases any link that is
 no longer `isConnected` — a detach is reported as a viewport leave — which bounds the
 retention 458f1ef fixed without costing a still-attached link its recovery.
 
@@ -182,3 +188,10 @@ A signed-out request does not reach that test: threads.com returns 200 with its 
 login page, `parseThreadsResponse()` throws, and the result is `unparseable`.
 
 Session parameters (`fb_dtsg`, `lsd`, `jazoest`, `__bkv`) are refreshed on every intercepted XHR request to handle token rotation.
+
+`__bkv` is the `WebBloksVersioningID`, scraped from the page's inline scripts rather than
+read from a request. It is optional at the call site, which is why `extractVersioningID()`
+spends a budget of `MAX_VERSIONING_ID_MISSES` post-load rescans before giving up instead
+of latching on the first miss after `readyState === 'complete'`: the ID is embedded in the
+initial HTML, so an earlier miss proves nothing, and a wrong latch would drop `__bkv` from
+every later request silently, with nothing to diagnose.

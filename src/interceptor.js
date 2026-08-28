@@ -19,20 +19,23 @@
     __crn: 'comet.threads.BarcelonaProfileThreadsColumnRoute'
   };
 
+  // Rescans allowed after the document has loaded before we accept the ID isn't coming
+  const MAX_VERSIONING_ID_MISSES = 3;
+
   let cachedVersioningID = null;
-  let versioningIDLookupDone = false;
+  let versioningIDMisses = 0;
 
   /**
    * Extract versioningID from page scripts.
-   * The ID is embedded in the initial HTML, so once the document has finished
-   * loading a miss is final and we stop rescanning inline scripts per request.
+   * The ID is in the initial HTML, so a miss before load proves nothing. __bkv is
+   * optional at the call site, so a wrong latch degrades every later request silently -
+   * hence a miss budget rather than latching on the first post-load miss.
    * @returns {string|null} versioningID value
    */
   function extractVersioningID() {
-    if (versioningIDLookupDone) {
+    if (cachedVersioningID || versioningIDMisses >= MAX_VERSIONING_ID_MISSES) {
       return cachedVersioningID;
     }
-    versioningIDLookupDone = document.readyState === 'complete';
 
     try {
       // Search in all script tags for WebBloksVersioningID
@@ -44,11 +47,12 @@
           const match = content.match(/"versioningID":"([a-f0-9]+)"/);
           if (match) {
             cachedVersioningID = match[1];
-            versioningIDLookupDone = true;
             return cachedVersioningID;
           }
         }
       }
+
+      if (document.readyState === 'complete') versioningIDMisses++;
       return null;
     } catch (error) {
       console.error('[Threads Country Flags] Error extracting versioningID:', error);

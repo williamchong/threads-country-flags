@@ -24,8 +24,11 @@ const PROFILE_HREF_RE = /\/@([a-zA-Z0-9_.]+)$/; // Profile links only (no /post/
 const PROCESSED_ATTR = 'data-threads-flag-processed';
 const HTTP_UNAUTHORIZED = 401;       // Session token rejected
 const HTTP_TOO_MANY_REQUESTS = 429;  // Rate limited
+const HTTP_FORBIDDEN = 403;          // Profile not visible to this session
+const HTTP_NOT_FOUND = 404;          // No such user
 const FAILURE_UNPARSEABLE = 'unparseable'; // 200, but not our JSON: the signed-out page
 const FAILURE_NETWORK = 'network';         // Request threw; no usable response
+const FAILURE_NO_PROFILE = 'no-profile';   // 200 and valid JSON, but carrying no profile
 const PROCESSED_PENDING = 'pending'; // Lookup in flight; outcome not yet known
 const PROCESSED_DONE = 'true';       // Terminal, whether or not a flag was inserted
 const UI_LANGUAGE = chrome.i18n.getUILanguage();
@@ -536,9 +539,21 @@ function shouldSkipImageLink(linkElement) {
 }
 
 /**
+ * Is this failure the user's own permanent state rather than something a retry fixes?
+ * A payload carrying no profile at all, a 404 and a 403 all describe a user we will
+ * never read: deleted, renamed away, or walled off. Retrying cannot change any of them.
+ * @param {Object|null} apiResponse - Response detail, or null if the request timed out
+ * @returns {boolean} True if the failure is permanent
+ */
+function isPermanentLookupFailure(apiResponse) {
+  const { reason, status } = apiResponse ?? {};
+  return reason === FAILURE_NO_PROFILE || status === HTTP_NOT_FOUND || status === HTTP_FORBIDDEN;
+}
+
+/**
  * Close the lookup gate for a failure that waiting can actually fix. A timeout self
  * throttles at API_TIMEOUT_MS and a missing profile is one user's problem, so neither
- * gates; nothing here is cached, so the retry chain still owns recovery.
+ * gates; nothing gated here is cached, so the retry chain still owns recovery.
  * @param {Object|null} apiResponse - Response detail, or null if the request timed out
  */
 function noteLookupFailure(apiResponse) {
@@ -559,7 +574,10 @@ function noteLookupFailure(apiResponse) {
     // "present" and leave a 429 ungated entirely. Clamp it as well as our own backoff,
     // so an absurd value cannot freeze lookups for the life of the page.
     const headerMs = apiResponse.retryAfterMs;
-    const backoffMs = headerMs > 0 ? headerMs : RATE_LIMIT_BASE_MS * 2 ** (rateLimitEpisodes - 1);
+    // A 429 that arrives while the gate is already closed skips the increment above, so
+    // the count can be 0; floor it, or the exponent -1 halves the base delay.
+    const episodes = Math.max(rateLimitEpisodes, 1);
+    const backoffMs = headerMs > 0 ? headerMs : RATE_LIMIT_BASE_MS * 2 ** (episodes - 1);
     cooldownMs = Math.min(backoffMs, RATE_LIMIT_MAX_MS);
   } else if (status === HTTP_UNAUTHORIZED || reason === FAILURE_UNPARSEABLE) {
     // Stale session token, or a 200 carrying the signed-out login page instead of our
@@ -644,14 +662,20 @@ async function fetchUserInfoFromApi(userId) {
   // Clean up pending request entry regardless of which promise won
   pendingCountryRequests.delete(requestId);
 
-  // Cache nothing on failure. A cached failure is indistinguishable from a genuine
-  // "no country" answer, so it would mark the link terminal and unobserve it - one
-  // 429 would blank that user for the life of the page. Returning null instead
-  // leaves the link eligible for the viewport retry chain. Genuine answers are
-  // persisted whether or not they carry a country, so they are not re-fetched.
-  if (!apiResponse?.ok) {
-    noteLookupFailure(apiResponse);
+  if (!apiResponse) {
+    // Timed out: no answer to learn anything from, and API_TIMEOUT_MS is its own throttle
+    noteLookupFailure(null);
     return null;
+  }
+
+  // Cache nothing on a failure waiting can fix: a cached failure is indistinguishable
+  // from a genuine "no country" answer, so it would mark the link terminal - one 429
+  // would blank that user for the life of the page. A permanent failure is the reverse:
+  // nothing gates it, so uncached it retries forever. Record it as the empty answer it
+  // is; NO_COUNTRY_TTL_MS reopens it a day later if the profile comes back.
+  if (!apiResponse.ok) {
+    noteLookupFailure(apiResponse);
+    if (!isPermanentLookupFailure(apiResponse)) return null;
   }
 
   const joinDate = apiResponse.joinDate ?? null;
