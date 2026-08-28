@@ -21,7 +21,7 @@
    * Extract country and join date from API response
    * @param {Object} response - Parsed API response
    * @returns {{countryName: string|null, joinDate: number|null}|null} User info, or
-   *   null on error or when the payload carries no usable data
+   *   null on error or when the payload is not a profile response
    */
   function extractCountryFromResponse(response) {
     try {
@@ -52,10 +52,12 @@
       // Extract join date by looking for text matching pattern: 20xx year + separator + stats
       const joinDate = extractJoinDate(response);
 
-      // Neither a country, nor an explicit "hidden", nor a join date: nothing worth
-      // caching, and what a challenge/logged-out payload looks like. Report it as a
-      // failure so it is never persisted for NO_COUNTRY_TTL_MS.
-      if (visibilityData === undefined && joinDate === null) {
+      // A profile response carries at least one of the two country fields, whatever
+      // their values. Neither present means this is not a profile payload at all -
+      // what a challenge or logged-out response looks like. Deliberately not keyed on
+      // joinDate: extractJoinDate() only parses some locales, so a payload that is
+      // fine everywhere else would be rejected for every user in the others.
+      if (countryData === undefined && visibilityData === undefined) {
         return null;
       }
 
@@ -212,6 +214,8 @@
    *
    * Always resolves to a discriminated result. This file reports what happened;
    * content.js decides whether and when to retry, so no backoff policy lives here.
+   * `status` is the HTTP status of the response that arrived, 0 if none did, and null
+   * if the request was never attempted.
    * @param {string} userId - Numeric user ID
    * @param {Object} sessionParams - Session parameters captured from page
    * @returns {Promise<{ok: true, countryName: string|null, joinDate: number|null}
@@ -223,6 +227,8 @@
       console.warn('[Threads Country Flags] ⚠️ sessionParams not available, skipping API call');
       return { ok: false, status: null };
     }
+
+    let response = null;
 
     try {
       const url = new URL(API_ENDPOINT);
@@ -251,7 +257,7 @@
       formData.append('params', JSON.stringify(params));
 
       // Make the request (in page context, so no CORS issues)
-      const response = await fetch(url.toString(), {
+      response = await fetch(url.toString(), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
@@ -274,7 +280,7 @@
       const data = parseThreadsResponse(responseText);
       const result = extractCountryFromResponse(data);
 
-      // A 200 carrying no usable profile data is not an answer worth caching
+      // Answered, but with no profile payload in it
       if (!result) {
         return { ok: false, status: response.status };
       }
@@ -282,10 +288,8 @@
       return { ok: true, countryName: result.countryName, joinDate: result.joinDate };
 
     } catch (error) {
-      // `response` is scoped to the try, so a post-response parse throw is reported
-      // as a network failure. content.js only branches on 429/401, so this is inert.
       console.error('[Threads Country Flags] ❌ Error fetching country:', error);
-      return { ok: false, status: 0 };
+      return { ok: false, status: response?.status ?? 0 };
     }
   }
 

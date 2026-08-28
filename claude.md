@@ -63,32 +63,37 @@ Additional filters: `shouldSkipImageLink()` skips image-only links (profile pict
 - **In-memory**: LRU caches with size limits (`MAX_USERNAME_CACHE_SIZE=1000`, `MAX_COUNTRY_CACHE_SIZE=500`)
 - **Persistent**: `chrome.storage.local` with `country_` prefix. Stores `{countryName, joinDate, cachedAt}`
 - **No-country TTL**: "No country" results cached with `cachedAt` timestamp, expire after 1 day (`NO_COUNTRY_TTL_MS`) to allow retries
-- **Failures are never cached**: the API response carries `ok`; timeouts, HTTP errors,
-  missing session params and payloads with no usable data are written to neither the LRU
-  nor `chrome.storage.local`. `fetchUserInfoFromApi()` returns `null` instead, which
-  leaves the link eligible for the viewport retry chain. Caching a failure would be
-  indistinguishable from a real "no country" answer, so it would mark the link terminal
-  and unobserve it — a single 429 would blank that user for the life of the page
+- **Failures are never cached**: the API response carries `ok`; timeouts, HTTP errors, missing session params and unusable payloads go to neither the LRU nor `chrome.storage.local`. `fetchUserInfoFromApi()` returns `null`, so the link stays eligible for the viewport retry chain instead of being marked terminal
 - **Country data**: Never expires (rarely changes)
 
 ### Rate Limiting
 
-The API response carries `status`, so `content.js` can tell a rate limit apart from a
-stale token. `noteApiOutcome()` closes a module-level gate that `resolveUserInfo()` checks
-before dispatching:
+The API response carries `status` — the HTTP status of the response that arrived, `0` if
+none did, `null` if the request was never attempted — so `content.js` can tell a rate
+limit apart from a stale token. `noteLookupFailure()` closes a module-level gate that
+`resolveUserInfo()` checks before dispatching:
 
-- **429** — exponential backoff from `RATE_LIMIT_BASE_MS` (30s), doubling per consecutive
-  429, capped at `RATE_LIMIT_MAX_MS` (5min). A `Retry-After` header wins when present and
-  is clamped to the same ceiling, so an absurd value cannot freeze lookups for the life of
-  the page. The endpoint is same-origin with the content script's match pattern, so the
-  header is readable without CORS exposure headers.
+- **429** — exponential backoff from `RATE_LIMIT_BASE_MS` (30s), doubling per *episode*
+  and capped at `RATE_LIMIT_MAX_MS` (5min). Episodes, not responses: a viewport dispatches
+  one request per user, so a single rate-limited round answers ~20 times over, and
+  counting per response would hit the ceiling on the first round and skip the ramp
+  entirely. An episode is a 429 arriving while the gate is open; one that arrives more
+  than `RATE_LIMIT_MAX_MS` after the last gate expired starts the count over. A
+  `Retry-After` header wins when it asks for a real wait — a `0` would otherwise read as
+  "present" and leave the 429 ungated — and is clamped to the same ceiling, so an absurd
+  value cannot freeze lookups for the life of the page. The endpoint is same-origin with
+  the content script's match pattern, so the header needs no CORS exposure.
 - **401** — `AUTH_COOLDOWN_MS` (15s) to wait out token rotation. Nothing is cleared:
   `interceptor.js` overwrites `sessionParams` on every intercepted XHR, and clearing it
   would strand every link if no later request carried a token.
-- **Everything else** (timeouts, 5xx, parse failures) sets no gate — the retry chain
-  already covers them, and none of them signal that waiting would help.
+- **5xx and `status: 0`** — `SERVER_COOLDOWN_MS` (5s). These answer fast, so ungated they
+  would turn a brief outage into a request storm: four chain attempts per link times a
+  viewport of links, repeated on every scroll pass.
+- **Timeouts and unusable payloads** set no gate. A timeout self-throttles at
+  `API_TIMEOUT_MS`, and an unusable payload is one user's problem, not the server's.
 
 Cached answers still render while the gate is closed; only new requests are suppressed.
+Each gate close logs a warning, so "flags stopped appearing" is diagnosable.
 
 ### Viewport Retries
 
@@ -103,11 +108,17 @@ hasn't rendered yet.
 Chains are keyed by link in the `pendingViewChains` WeakMap, so a detached link
 stays collectable and the observer's "left viewport" branch cancels the chain.
 
-A lookup turned away by the rate-limit gate is not a terminal state, so the link keeps
-its observation. The chain exhausts its retries in ~7s, well inside a backoff window,
-but recovery is free: the next scroll produces a leave/enter pair and a fresh chain.
-That is why the gate needs no timer of its own and no resume jitter — resumption is
-staggered by the user's scrolling rather than synchronised on a single expiry.
+A lookup turned away by the lookup gate is not a terminal state, so the link keeps its
+observation, and the chain stops rather than spending retries it cannot win — even the
+shortest gate outlasts the whole ~7s retry window. Recovery is free: the next scroll
+produces a leave/enter pair and a fresh chain. That is why the gate needs no timer of its
+own and no resume jitter — resumption is staggered by the user's scrolling rather than
+synchronised on a single expiry.
+
+Because a failed lookup is non-terminal, its link stays observed, and under a sustained
+outage those accumulate. The "left viewport" branch therefore releases any link that is
+no longer `isConnected` — a detach is reported as a viewport leave — which bounds the
+retention 458f1ef fixed without costing a still-attached link its recovery.
 
 ### Country Resolution
 
@@ -156,8 +167,10 @@ bundles **Twemoji Country Flags**, a flag-only COLR font, in `src/flag-font.css`
 - `THREADS_ABOUT_THIS_PROFILE:about_this_profile_country_visibility` — whether country is public
 - Join date: not read from a keyed entry. `extractJoinDate()` walks the payload for the first `text` value containing a `20xx` year and a `·`/`•` separator (e.g. "December 2025 · 12 posts") and parses month/year from it
 
-A 200 whose payload carries neither a visibility entry nor a parseable join date is
-reported as a failure rather than as "no country" — that is what a challenge or
-logged-out response looks like, and it holds nothing worth caching for 24h.
+A 200 whose payload carries neither of the two country keys is reported as a failure
+rather than as "no country" — a profile response always carries at least one of them
+whatever their values, so neither present means this is not a profile payload at all.
+The test deliberately ignores the join date: `extractJoinDate()` only parses some
+locales, so keying on it would reject every profile in the others.
 
 Session parameters (`fb_dtsg`, `lsd`, `jazoest`, `__bkv`) are refreshed on every intercepted XHR request to handle token rotation.

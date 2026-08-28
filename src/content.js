@@ -15,14 +15,16 @@ const VIEW_RETRY_MS = 2000;           // Gap between retries of a lookup that co
 const MAX_VIEW_RETRIES = 3;           // Retries after the initial dwell attempt
 const API_TIMEOUT_MS = 10000;         // Give up waiting for the injected API after this
 const INITIAL_SCAN_DELAY_MS = 2000;   // Wait for initial route data before scanning links
-const RATE_LIMIT_BASE_MS = 30 * 1000;     // Backoff after the first 429
+const RATE_LIMIT_BASE_MS = 30 * 1000;     // Backoff after a 429, doubled per episode
 const RATE_LIMIT_MAX_MS = 5 * 60 * 1000;  // Backoff ceiling; also clamps Retry-After
 const AUTH_COOLDOWN_MS = 15 * 1000;       // 401: wait out session token rotation
-const HTTP_UNAUTHORIZED = 401;            // Session token rejected
-const HTTP_TOO_MANY_REQUESTS = 429;       // Rate limited
+const SERVER_COOLDOWN_MS = 5 * 1000;      // 5xx / no response: collapse the burst
 const PROFILE_LINK_SELECTOR = 'a[href*="/@"][role="link"]';
 const PROFILE_HREF_RE = /\/@([a-zA-Z0-9_.]+)$/; // Profile links only (no /post/... suffix)
 const PROCESSED_ATTR = 'data-threads-flag-processed';
+const HTTP_UNAUTHORIZED = 401;       // Session token rejected
+const HTTP_TOO_MANY_REQUESTS = 429;  // Rate limited
+const HTTP_NO_RESPONSE = 0;          // api-injected.js could not reach the server
 const PROCESSED_PENDING = 'pending'; // Lookup in flight; outcome not yet known
 const PROCESSED_DONE = 'true';       // Terminal, whether or not a flag was inserted
 const UI_LANGUAGE = chrome.i18n.getUILanguage();
@@ -266,11 +268,12 @@ const pendingCountryRequests = new Map();
 const userCountryPromises = new Map();
 let countryRequestId = 0;
 
-// Rate-limit gate. A 429 or 401 closes it and resolveUserInfo() turns lookups away
-// without dispatching until it reopens. Gated links are never unobserved, so the next
-// scroll gives them a fresh retry chain - the gate needs no timer of its own.
-let gateUntil = 0;
-let consecutiveRateLimits = 0;
+// Lookup gate. A failure the server asked us to wait out closes it, and
+// resolveUserInfo() turns lookups away without dispatching until it reopens. Gated
+// links keep their observation, so a later scroll retries them for free - the gate
+// needs no timer of its own.
+let lookupGateUntil = 0;
+let rateLimitEpisodes = 0;
 
 // Retry chains for links currently dwelling in the viewport, keyed by link.
 // A pending timer's closure is what retains the link, not this map; the chain
@@ -532,43 +535,54 @@ function shouldSkipImageLink(linkElement) {
 }
 
 /**
- * Record an API outcome, closing the rate-limit gate when the server asked us to back
- * off. Timeouts, 5xx and parse failures set no gate: the viewport retry chain already
- * covers those, and none of them carry a signal that waiting would help.
+ * Close the lookup gate for a failure that waiting can actually fix. A timeout self
+ * throttles at API_TIMEOUT_MS and an unusable payload is one user's problem, so
+ * neither gates; nothing here is cached, so the retry chain still owns recovery.
  * @param {Object|null} apiResponse - Response detail, or null if the request timed out
  */
-function noteApiOutcome(apiResponse) {
-  if (apiResponse?.ok) {
-    consecutiveRateLimits = 0;
-    return;
-  }
-
+function noteLookupFailure(apiResponse) {
+  const now = Date.now();
+  const status = apiResponse?.status;
   let cooldownMs = 0;
 
-  if (apiResponse?.status === HTTP_TOO_MANY_REQUESTS) {
-    consecutiveRateLimits++;
-    // Clamp Retry-After as well as our own backoff: an absurd header value must not be
-    // able to freeze lookups for the life of the page
-    const backoffMs = apiResponse.retryAfterMs
-      ?? RATE_LIMIT_BASE_MS * 2 ** (consecutiveRateLimits - 1);
+  if (status === HTTP_TOO_MANY_REQUESTS) {
+    // Count episodes, not responses. A viewport dispatches one request per user, so a
+    // single rate-limited round answers ~20 times over; incrementing per response would
+    // reach the ceiling on the first round and the ramp would never happen.
+    if (now >= lookupGateUntil) {
+      // A gate that cooled off long ago was a separate incident, not an escalation
+      if (now - lookupGateUntil > RATE_LIMIT_MAX_MS) rateLimitEpisodes = 0;
+      rateLimitEpisodes++;
+    }
+    // Honour Retry-After only when it asks for a real wait: a 0 would otherwise read as
+    // "present" and leave a 429 ungated entirely. Clamp it as well as our own backoff,
+    // so an absurd value cannot freeze lookups for the life of the page.
+    const headerMs = apiResponse.retryAfterMs;
+    const backoffMs = headerMs > 0 ? headerMs : RATE_LIMIT_BASE_MS * 2 ** (rateLimitEpisodes - 1);
     cooldownMs = Math.min(backoffMs, RATE_LIMIT_MAX_MS);
-  } else if (apiResponse?.status === HTTP_UNAUTHORIZED) {
+  } else if (status === HTTP_UNAUTHORIZED) {
     // Stale session token. interceptor.js overwrites sessionParams on every intercepted
     // XHR, so waiting is enough - there is nothing to clear, and clearing it would
-    // strand every link if no further request ever carries a token.
+    // strand every link if no further request ever carried a token.
     cooldownMs = AUTH_COOLDOWN_MS;
+  } else if (status === HTTP_NO_RESPONSE || status >= 500) {
+    // These answer fast, so without a gate the chain's four attempts per link times a
+    // viewport of links turns a brief outage into a request storm
+    cooldownMs = SERVER_COOLDOWN_MS;
   }
 
-  if (cooldownMs > 0) {
-    gateUntil = Math.max(gateUntil, Date.now() + cooldownMs);
-  }
+  if (cooldownMs === 0) return;
+
+  lookupGateUntil = Math.max(lookupGateUntil, now + cooldownMs);
+  console.warn(`[Threads Country Flags] ⚠️ Lookups paused for ${Math.round(cooldownMs / 1000)}s after HTTP ${status}`);
 }
 
 /**
  * Look up user info from memory, storage, or the API (in that order)
  * @param {string} userId
  * @returns {Promise<Object|null>} {countryName, joinDate, isNewUser}, or null if
- *   the lookup could not be attempted (no session params) or failed
+ *   the lookup could not be attempted (no session params, or backing off after a
+ *   failure) or failed
  */
 async function resolveUserInfo(userId) {
   let userInfo = countryCache.get(userId);
@@ -580,10 +594,10 @@ async function resolveUserInfo(userId) {
     return userInfo;
   }
 
-  // Backing off after a 429/401: turn the lookup away without dispatching. The caller
-  // leaves the link observed, so a later scroll retries it for free. Cached answers are
-  // already served above, so the gate only suppresses new requests.
-  if (Date.now() < gateUntil) return null;
+  // Backing off after a failure worth waiting out: turn the lookup away without
+  // dispatching. The caller leaves the link observed, so a later scroll retries it for
+  // free. Cached answers are served above, so the gate only suppresses new requests.
+  if (Date.now() < lookupGateUntil) return null;
 
   // Without session params the API call cannot succeed
   if (!sessionParams) return null;
@@ -627,13 +641,15 @@ async function fetchUserInfoFromApi(userId) {
   // Clean up pending request entry regardless of which promise won
   pendingCountryRequests.delete(requestId);
 
-  noteApiOutcome(apiResponse);
-
   // Cache nothing on failure. A cached failure is indistinguishable from a genuine
   // "no country" answer, so it would mark the link terminal and unobserve it - one
   // 429 would blank that user for the life of the page. Returning null instead
-  // leaves the link eligible for the viewport retry chain.
-  if (!apiResponse?.ok) return null;
+  // leaves the link eligible for the viewport retry chain. Genuine answers are
+  // persisted whether or not they carry a country, so they are not re-fetched.
+  if (!apiResponse?.ok) {
+    noteLookupFailure(apiResponse);
+    return null;
+  }
 
   const joinDate = apiResponse.joinDate ?? null;
   const info = {
@@ -643,8 +659,6 @@ async function fetchUserInfoFromApi(userId) {
   };
 
   countryCache.set(userId, info);
-
-  // Persist genuine answers, including "no country", to avoid repeated API calls
   await saveCountryToStorage(userId, info);
 
   return info;
@@ -808,7 +822,9 @@ function startViewAttempts(linkElement, username) {
       // the lookup was in flight
       if (pendingViewChains.get(linkElement) !== chain) return;
 
-      if (done || attempt >= MAX_VIEW_RETRIES) {
+      // The shortest gate outlasts the whole retry window, so further attempts would
+      // only re-pay the storage read and the image-link scan to be turned away again
+      if (done || attempt >= MAX_VIEW_RETRIES || Date.now() < lookupGateUntil) {
         pendingViewChains.delete(linkElement);
         return;
       }
@@ -847,6 +863,16 @@ function handleIntersection(entries) {
       startViewAttempts(linkElement, username);
     } else {
       cancelViewAttempts(linkElement);
+
+      // A detach is reported as a viewport leave. Releasing the observation here
+      // bounds the retention 458f1ef fixed: a lookup that never reaches a terminal
+      // state keeps its observation, and a failed lookup is now such a state, so a
+      // detached feed subtree would otherwise be pinned for the life of the page.
+      // Dropping it from observedLinks lets a re-attached link be observed again.
+      if (!linkElement.isConnected) {
+        intersectionObserver.unobserve(linkElement);
+        observedLinks.delete(linkElement);
+      }
     }
   }
 }
