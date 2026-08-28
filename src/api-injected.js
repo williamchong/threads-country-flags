@@ -214,8 +214,10 @@
    *
    * Always resolves to a discriminated result. This file reports what happened;
    * content.js decides whether and when to retry, so no backoff policy lives here.
-   * `status` is the HTTP status of the response that arrived, 0 if none did, and null
-   * if the request was never attempted.
+   * A failure carries `reason` - 'no-session', 'http', 'unparseable', 'no-profile' or
+   * 'network' - because the HTTP status alone cannot separate them: threads.com answers
+   * a signed-out request with 200 and its HTML login page. `status` is the status of the
+   * response that arrived, or null if none did.
    * @param {string} userId - Numeric user ID
    * @param {Object} sessionParams - Session parameters captured from page
    * @returns {Promise<{ok: true, countryName: string|null, joinDate: number|null}
@@ -225,7 +227,7 @@
     // Don't attempt API call if sessionParams is not set
     if (!sessionParams) {
       console.warn('[Threads Country Flags] ⚠️ sessionParams not available, skipping API call');
-      return { ok: false, status: null };
+      return { ok: false, reason: 'no-session', status: null };
     }
 
     let response = null;
@@ -271,25 +273,38 @@
         console.error(`[Threads Country Flags] ❌ API request failed: ${response.status}`);
         return {
           ok: false,
+          reason: 'http',
           status: response.status,
           retryAfterMs: parseRetryAfter(response.headers.get('Retry-After'))
         };
       }
 
       const responseText = await response.text();
-      const data = parseThreadsResponse(responseText);
+
+      let data;
+      try {
+        data = parseThreadsResponse(responseText);
+      } catch {
+        // A 200 that is not our JSON at all. threads.com answers a signed-out request
+        // with its HTML login page, so this is the steady state for a logged-out tab
+        // rather than a rare corruption, and every link on the page reaches it. It has
+        // to be distinguishable from a real 200 or content.js cannot throttle it.
+        console.error('[Threads Country Flags] ❌ Response was not the expected JSON');
+        return { ok: false, reason: 'unparseable', status: response.status };
+      }
+
       const result = extractCountryFromResponse(data);
 
-      // Answered, but with no profile payload in it
+      // Our JSON, but no profile fields for this user - their problem, not the server's
       if (!result) {
-        return { ok: false, status: response.status };
+        return { ok: false, reason: 'no-profile', status: response.status };
       }
 
       return { ok: true, countryName: result.countryName, joinDate: result.joinDate };
 
     } catch (error) {
       console.error('[Threads Country Flags] ❌ Error fetching country:', error);
-      return { ok: false, status: response?.status ?? 0 };
+      return { ok: false, reason: 'network', status: response?.status ?? null };
     }
   }
 
@@ -307,6 +322,7 @@
       detail: {
         userId,
         ok: result.ok,
+        reason: result.reason ?? null,
         status: result.status ?? null,
         retryAfterMs: result.retryAfterMs ?? null,
         countryName: result.countryName || null,

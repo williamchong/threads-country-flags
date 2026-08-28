@@ -68,10 +68,12 @@ Additional filters: `shouldSkipImageLink()` skips image-only links (profile pict
 
 ### Rate Limiting
 
-The API response carries `status` — the HTTP status of the response that arrived, `0` if
-none did, `null` if the request was never attempted — so `content.js` can tell a rate
-limit apart from a stale token. `noteLookupFailure()` closes a module-level gate that
-`resolveUserInfo()` checks before dispatching:
+A failure carries `reason` (`no-session`, `http`, `unparseable`, `no-profile`,
+`network`) alongside `status` (the HTTP status of the response that arrived, or `null`).
+The status alone is not enough: **threads.com answers a signed-out request with HTTP 200
+and its HTML login page**, so `JSON.parse` throws on a response that looks like a success.
+`noteLookupFailure()` closes a module-level gate that `resolveUserInfo()` checks before
+dispatching:
 
 - **429** — exponential backoff from `RATE_LIMIT_BASE_MS` (30s), doubling per *episode*
   and capped at `RATE_LIMIT_MAX_MS` (5min). Episodes, not responses: a viewport dispatches
@@ -83,14 +85,17 @@ limit apart from a stale token. `noteLookupFailure()` closes a module-level gate
   "present" and leave the 429 ungated — and is clamped to the same ceiling, so an absurd
   value cannot freeze lookups for the life of the page. The endpoint is same-origin with
   the content script's match pattern, so the header needs no CORS exposure.
-- **401** — `AUTH_COOLDOWN_MS` (15s) to wait out token rotation. Nothing is cleared:
-  `interceptor.js` overwrites `sessionParams` on every intercepted XHR, and clearing it
-  would strand every link if no later request carried a token.
-- **5xx and `status: 0`** — `SERVER_COOLDOWN_MS` (5s). These answer fast, so ungated they
+- **401, and `unparseable`** — `AUTH_COOLDOWN_MS` (15s). Same class of problem: either
+  the token is stale or we are signed out entirely. `unparseable` is the steady state for
+  a logged-out tab, not a rare corruption, so every link on the page reaches it — it must
+  be gated or the retries never stop. Nothing is cleared: `interceptor.js` overwrites
+  `sessionParams` on every intercepted XHR, and clearing it would strand every link if no
+  later request carried a token.
+- **5xx and `network`** — `SERVER_COOLDOWN_MS` (5s). These answer fast, so ungated they
   would turn a brief outage into a request storm: four chain attempts per link times a
   viewport of links, repeated on every scroll pass.
-- **Timeouts and unusable payloads** set no gate. A timeout self-throttles at
-  `API_TIMEOUT_MS`, and an unusable payload is one user's problem, not the server's.
+- **Timeouts and `no-profile`** set no gate. A timeout self-throttles at
+  `API_TIMEOUT_MS`, and a missing profile is one user's problem, not the server's.
 
 Cached answers still render while the gate is closed; only new requests are suppressed.
 Each gate close logs a warning, so "flags stopped appearing" is diagnosable.
@@ -167,10 +172,13 @@ bundles **Twemoji Country Flags**, a flag-only COLR font, in `src/flag-font.css`
 - `THREADS_ABOUT_THIS_PROFILE:about_this_profile_country_visibility` — whether country is public
 - Join date: not read from a keyed entry. `extractJoinDate()` walks the payload for the first `text` value containing a `20xx` year and a `·`/`•` separator (e.g. "December 2025 · 12 posts") and parses month/year from it
 
-A 200 whose payload carries neither of the two country keys is reported as a failure
+A 200 whose payload carries neither of the two country keys is reported as `no-profile`
 rather than as "no country" — a profile response always carries at least one of them
-whatever their values, so neither present means this is not a profile payload at all.
-The test deliberately ignores the join date: `extractJoinDate()` only parses some
-locales, so keying on it would reject every profile in the others.
+whatever their values. The test deliberately ignores the join date: `extractJoinDate()`
+only parses some locales, so keying on it would reject every profile in the others (a
+Spanish "diciembre de 2025 · 12 publicaciones" yields no join date at all).
+
+A signed-out request does not reach that test: threads.com returns 200 with its HTML
+login page, `parseThreadsResponse()` throws, and the result is `unparseable`.
 
 Session parameters (`fb_dtsg`, `lsd`, `jazoest`, `__bkv`) are refreshed on every intercepted XHR request to handle token rotation.

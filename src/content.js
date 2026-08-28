@@ -24,7 +24,8 @@ const PROFILE_HREF_RE = /\/@([a-zA-Z0-9_.]+)$/; // Profile links only (no /post/
 const PROCESSED_ATTR = 'data-threads-flag-processed';
 const HTTP_UNAUTHORIZED = 401;       // Session token rejected
 const HTTP_TOO_MANY_REQUESTS = 429;  // Rate limited
-const HTTP_NO_RESPONSE = 0;          // api-injected.js could not reach the server
+const FAILURE_UNPARSEABLE = 'unparseable'; // 200, but not our JSON: the signed-out page
+const FAILURE_NETWORK = 'network';         // Request threw; no usable response
 const PROCESSED_PENDING = 'pending'; // Lookup in flight; outcome not yet known
 const PROCESSED_DONE = 'true';       // Terminal, whether or not a flag was inserted
 const UI_LANGUAGE = chrome.i18n.getUILanguage();
@@ -344,13 +345,13 @@ window.addEventListener('threadsSessionParams', (event) => {
  * Listen for country responses from injected API
  */
 window.addEventListener('threadsCountryResponse', (event) => {
-  const { ok, status, retryAfterMs, countryName, joinDate, requestId } = event.detail;
+  const { ok, reason, status, retryAfterMs, countryName, joinDate, requestId } = event.detail;
 
   // Resolve pending promise with full user info
   const resolve = pendingCountryRequests.get(requestId);
   if (resolve) {
     pendingCountryRequests.delete(requestId);
-    resolve({ ok, status, retryAfterMs, countryName, joinDate });
+    resolve({ ok, reason, status, retryAfterMs, countryName, joinDate });
   }
 });
 
@@ -536,13 +537,13 @@ function shouldSkipImageLink(linkElement) {
 
 /**
  * Close the lookup gate for a failure that waiting can actually fix. A timeout self
- * throttles at API_TIMEOUT_MS and an unusable payload is one user's problem, so
- * neither gates; nothing here is cached, so the retry chain still owns recovery.
+ * throttles at API_TIMEOUT_MS and a missing profile is one user's problem, so neither
+ * gates; nothing here is cached, so the retry chain still owns recovery.
  * @param {Object|null} apiResponse - Response detail, or null if the request timed out
  */
 function noteLookupFailure(apiResponse) {
   const now = Date.now();
-  const status = apiResponse?.status;
+  const { reason, status } = apiResponse ?? {};
   let cooldownMs = 0;
 
   if (status === HTTP_TOO_MANY_REQUESTS) {
@@ -560,12 +561,14 @@ function noteLookupFailure(apiResponse) {
     const headerMs = apiResponse.retryAfterMs;
     const backoffMs = headerMs > 0 ? headerMs : RATE_LIMIT_BASE_MS * 2 ** (rateLimitEpisodes - 1);
     cooldownMs = Math.min(backoffMs, RATE_LIMIT_MAX_MS);
-  } else if (status === HTTP_UNAUTHORIZED) {
-    // Stale session token. interceptor.js overwrites sessionParams on every intercepted
-    // XHR, so waiting is enough - there is nothing to clear, and clearing it would
-    // strand every link if no further request ever carried a token.
+  } else if (status === HTTP_UNAUTHORIZED || reason === FAILURE_UNPARSEABLE) {
+    // Stale session token, or a 200 carrying the signed-out login page instead of our
+    // JSON - the same class of problem, and the steady state for a logged-out tab, so
+    // every link would otherwise retry into it forever. interceptor.js overwrites
+    // sessionParams on every intercepted XHR, so waiting is enough: there is nothing to
+    // clear, and clearing it would strand every link if no request carried a token.
     cooldownMs = AUTH_COOLDOWN_MS;
-  } else if (status === HTTP_NO_RESPONSE || status >= 500) {
+  } else if (reason === FAILURE_NETWORK || status >= 500) {
     // These answer fast, so without a gate the chain's four attempts per link times a
     // viewport of links turns a brief outage into a request storm
     cooldownMs = SERVER_COOLDOWN_MS;
@@ -574,7 +577,7 @@ function noteLookupFailure(apiResponse) {
   if (cooldownMs === 0) return;
 
   lookupGateUntil = Math.max(lookupGateUntil, now + cooldownMs);
-  console.warn(`[Threads Country Flags] ⚠️ Lookups paused for ${Math.round(cooldownMs / 1000)}s after HTTP ${status}`);
+  console.warn(`[Threads Country Flags] ⚠️ Lookups paused for ${Math.round(cooldownMs / 1000)}s (${reason}, HTTP ${status})`);
 }
 
 /**
