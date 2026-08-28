@@ -12,12 +12,14 @@ const NO_COUNTRY_TTL_MS = 24 * 60 * 60 * 1000; // 1 day TTL for "no country" cac
 const NEW_USER_DAYS = 60;             // Users who joined within this many days get the 🔰 badge
 const VIEW_DWELL_MS = 1000;           // Link must stay in viewport this long before we fetch
 const VIEW_RETRY_MS = 2000;           // Gap between retries of a lookup that couldn't run yet
-const MAX_VIEW_ATTEMPTS = 3;          // Retries after the initial dwell attempt
+const MAX_VIEW_RETRIES = 3;           // Retries after the initial dwell attempt
 const API_TIMEOUT_MS = 10000;         // Give up waiting for the injected API after this
 const INITIAL_SCAN_DELAY_MS = 2000;   // Wait for initial route data before scanning links
 const PROFILE_LINK_SELECTOR = 'a[href*="/@"][role="link"]';
 const PROFILE_HREF_RE = /\/@([a-zA-Z0-9_.]+)$/; // Profile links only (no /post/... suffix)
 const PROCESSED_ATTR = 'data-threads-flag-processed';
+const PROCESSED_PENDING = 'pending'; // Lookup in flight; outcome not yet known
+const PROCESSED_DONE = 'true';       // Terminal, whether or not a flag was inserted
 const UI_LANGUAGE = chrome.i18n.getUILanguage();
 
 /**
@@ -260,7 +262,9 @@ const userCountryPromises = new Map();
 let countryRequestId = 0;
 
 // Retry chains for links currently dwelling in the viewport, keyed by link.
-// WeakMap-keyed so a detached link is collectable with its pending attempt.
+// A pending timer's closure is what retains the link, not this map; the chain
+// is dropped when the link leaves the viewport, which is also how the observer
+// reports a detach.
 const pendingViewChains = new WeakMap();
 
 // Links that have ever been observed. Never pruned, so a link unobserved at a
@@ -600,21 +604,16 @@ async function fetchUserInfoFromApi(userId) {
  *   attempt can improve; false while a retry could still succeed
  */
 async function addCountryFlag(linkElement, username) {
-  // Skip if already handled (or in flight) - whoever owns it will finish it
-  if (linkElement.hasAttribute(PROCESSED_ATTR)) {
-    return true;
-  }
+  // A lookup in flight is not terminal - its owner may still fail and clear the
+  // attribute, and a chain that has been cancelled cannot report that back here
+  const state = linkElement.getAttribute(PROCESSED_ATTR);
+  if (state === PROCESSED_DONE) return true;
+  if (state === PROCESSED_PENDING) return false;
 
   // Page headers never carry a flag, and no re-render changes that
   if (linkElement.closest('h1')) {
     intersectionObserver?.unobserve(linkElement);
     return true;
-  }
-
-  // Image-only links (profile pictures) stay observed: the test is content
-  // based, so a link whose display name hasn't rendered yet must stay eligible
-  if (shouldSkipImageLink(linkElement)) {
-    return false;
   }
 
   // Get user ID from our mapping
@@ -625,8 +624,16 @@ async function addCountryFlag(linkElement, username) {
     return false;
   }
 
+  // Image-only links (profile pictures) stay observed: the test is content
+  // based, so a link whose display name hasn't rendered yet must stay eligible.
+  // Ordered after the user ID lookup, which is free and rejects the same links
+  // during the window the retries are there to wait out
+  if (shouldSkipImageLink(linkElement)) {
+    return false;
+  }
+
   // Mark in-flight before the first await so a re-entrant call can't double-insert
-  linkElement.setAttribute(PROCESSED_ATTR, 'pending');
+  linkElement.setAttribute(PROCESSED_ATTR, PROCESSED_PENDING);
 
   const userInfo = await resolveUserInfo(userId);
   if (!userInfo) {
@@ -635,7 +642,7 @@ async function addCountryFlag(linkElement, username) {
     return false;
   }
 
-  linkElement.setAttribute(PROCESSED_ATTR, 'true');
+  linkElement.setAttribute(PROCESSED_ATTR, PROCESSED_DONE);
 
   // Release the observation: a resolved link never needs another lookup, and
   // the observer would otherwise retain every link the feed has ever shown
@@ -716,11 +723,8 @@ async function addCountryFlag(linkElement, username) {
  * IntersectionObserver only reports threshold crossings, so a link that is
  * already in view when its data arrives gets no second callback of its own.
  *
- * The chain object stays in pendingViewChains for the whole chain, not just
- * for each pending timer, so it doubles as the "a chain is running" marker: a
- * further intersection event cannot start a competing chain, and the leaving
- * branch deleting it cancels the chain even mid-await. Identity is checked on
- * the chain rather than the timer id, which browsers may reuse once spent.
+ * Identity is compared on the chain object rather than the timer id, which
+ * browsers may reuse once a timer has fired.
  * @param {HTMLElement} linkElement - Profile link element
  * @param {string} username - Username (without @)
  */
@@ -728,27 +732,47 @@ function startViewAttempts(linkElement, username) {
   if (pendingViewChains.has(linkElement)) return;
 
   const chain = { timer: null };
+  pendingViewChains.set(linkElement, chain);
 
-  const run = (delay, attempt) => {
+  const run = (attempt) => {
     chain.timer = setTimeout(async () => {
-      const resolved = await addCountryFlag(linkElement, username);
+      // A throw must not strand the chain in pendingViewChains: the entry is
+      // what blocks a new one, so the link would never be attempted again.
+      // chrome.i18n throws on every visible link at once after an extension
+      // reload, which is exactly when that would bite
+      let done = true;
+      try {
+        done = await addCountryFlag(linkElement, username);
+      } catch (error) {
+        console.error('[Threads Country Flags] Error adding flag:', error);
+        // Leave no link stranded mid-lookup, but do not spend the remaining
+        // retries on a call that will almost certainly throw again
+        linkElement.removeAttribute(PROCESSED_ATTR);
+      }
 
       // Cancelled by the leaving branch, or superseded by a newer chain, while
       // the lookup was in flight
       if (pendingViewChains.get(linkElement) !== chain) return;
 
-      if (resolved || attempt >= MAX_VIEW_ATTEMPTS) {
+      if (done || attempt >= MAX_VIEW_RETRIES) {
         pendingViewChains.delete(linkElement);
         return;
       }
 
-      run(VIEW_RETRY_MS, attempt + 1);
-    }, delay);
-
-    pendingViewChains.set(linkElement, chain);
+      run(attempt + 1);
+    }, attempt === 0 ? VIEW_DWELL_MS : VIEW_RETRY_MS);
   };
 
-  run(VIEW_DWELL_MS, 0);
+  run(0);
+}
+
+/**
+ * Cancel a link's retry chain, if it has one
+ * @param {HTMLElement} linkElement - Profile link element
+ */
+function cancelViewAttempts(linkElement) {
+  clearTimeout(pendingViewChains.get(linkElement)?.timer);
+  pendingViewChains.delete(linkElement);
 }
 
 /**
@@ -761,19 +785,14 @@ function handleIntersection(entries) {
 
     if (entry.isIntersecting) {
       // Fully handled links never need another lookup
-      if (linkElement.getAttribute(PROCESSED_ATTR) === 'true') continue;
+      if (linkElement.getAttribute(PROCESSED_ATTR) === PROCESSED_DONE) continue;
 
       const username = extractUsernameFromLink(linkElement);
       if (!username) continue;
 
       startViewAttempts(linkElement, username);
     } else {
-      // Element left viewport - cancel the pending timer and its retry chain
-      const chain = pendingViewChains.get(linkElement);
-      if (chain) {
-        clearTimeout(chain.timer);
-        pendingViewChains.delete(linkElement);
-      }
+      cancelViewAttempts(linkElement);
     }
   }
 }

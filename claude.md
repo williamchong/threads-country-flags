@@ -72,15 +72,12 @@ IntersectionObserver only reports threshold crossings, so a link already in view
 when its user ID arrives gets no further callback of its own. `startViewAttempts()`
 therefore re-arms the dwell timer instead of giving up after one attempt:
 `addCountryFlag()` returns whether the link reached a state no further attempt can
-improve, and the chain retries up to `MAX_VIEW_ATTEMPTS` times, `VIEW_RETRY_MS`
+improve, and the chain retries up to `MAX_VIEW_RETRIES` times, `VIEW_RETRY_MS`
 apart, covering a late user ID, late session params, and a display name that
 hasn't rendered yet.
 
-The chain object lives in the `pendingViewChains` WeakMap that also holds its
-pending timer, so a detached link stays collectable and the observer's
-"left viewport" branch cancels the chain. The entry persists across the `await`
-as the "a chain is running" marker; a resuming callback compares chain identity
-so it cannot re-arm over a newer chain started while it was in flight.
+Chains are keyed by link in the `pendingViewChains` WeakMap, so a detached link
+stays collectable and the observer's "left viewport" branch cancels the chain.
 
 ### Country Resolution
 
